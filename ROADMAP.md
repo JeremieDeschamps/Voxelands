@@ -19,11 +19,16 @@
   - Arborescence complète créée (`scripts/world/`, `player/`, `enemies/`, `items/`, `ui/`, `scenes/`).
   - Validation headless réussie sans erreur.
 
-- [ ] **Étape 2 : Moteur Voxel Procédural (World)**
-  - Générateur de terrain voxel par code (ArrayMesh / SurfaceTool, couleurs par vertex).
-  - Gestion des chunks, types de blocs (herbe, terre, pierre, eau, sable, bois, feuillage).
-  - Génération de reliefs (bruit de Perlin / FastNoiseLite) et arbres procéduraux.
-  - Collisions 3D des chunks.
+- [x] **Étape 2 : Moteur Voxel Procédural (World)**
+  - Chunks de 16x16x128 blocs avec calcul déterministe par `FastNoiseLite`.
+  - Culling des faces internes cachées entre blocs adjacents.
+  - Couleurs par vertex pour chaque type de bloc (herbe, terre, pierre, sable, eau).
+  - Ambient Occlusion (AO) par vertex à 4 niveaux d'intensité et inversion des diagonales pour éviter les artefacts.
+  - Génération multithreadée asynchrone sans saccade via `WorkerThreadPool` avec pool de tâches limitées.
+  - Chargement et déchargement infini dynamique autour de la cible (rayon configurable).
+  - Génération de collisions solides 3D via `ConcavePolygonShape3D` sur chaque chunk.
+  - Caméra libre de test (`FreeCamera`) avec contrôles WASD + souris + élévation + accélération Shift.
+  - Validation headless réussie.
 
 - [ ] **Étape 3 : Contrôleur Joueur & Caméra (Player)**
   - Déplacement FPS/TPS à la première/troisième personne (sauts, collisions, gravité).
