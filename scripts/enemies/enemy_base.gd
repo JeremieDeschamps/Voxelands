@@ -5,6 +5,8 @@ extends CharacterBody3D
 
 const DamageLabel3D = preload("res://scripts/ui/damage_label_3d.gd")
 const DeathParticles = preload("res://scripts/enemies/death_particles.gd")
+const ItemData = preload("res://scripts/items/item_data.gd")
+const LootDrop = preload("res://scripts/items/loot_drop.gd")
 
 enum State {
 	IDLE,
@@ -25,6 +27,7 @@ enum State {
 @export var enemy_name: String = "Ennemi"
 @export var death_color: Color = Color.WHITE
 
+var level: int = 1
 var current_health: float = 50.0
 var current_state: State = State.IDLE
 var target_player: CharacterBody3D = null
@@ -44,7 +47,13 @@ var gravity: float = 19.6
 
 
 func _ready() -> void:
+	# Montée en puissance selon la distance à l'origine (0, 0, 0)
+	var dist: float = global_position.length()
+	level = 1 + int(dist / 38.0)
+	max_health = roundf(max_health * (1.0 + float(level - 1) * 0.35))
+	attack_damage = roundf(attack_damage * (1.0 + float(level - 1) * 0.22))
 	current_health = max_health
+
 	spawn_origin = global_position
 	patrol_target = global_position
 	add_to_group("enemies")
@@ -232,8 +241,18 @@ func take_damage(amount: float, from_position: Vector3 = Vector3.ZERO) -> void:
 		die()
 
 
-## Mort et apparition des particules de débris voxel
+## Mort, don d'XP, butin au sol et apparition des particules de débris voxel
 func die() -> void:
 	current_state = State.DEAD
+
+	# Don d'expérience au joueur
+	if target_player != null and is_instance_valid(target_player) and target_player.has_method("add_xp"):
+		target_player.add_xp(18 * level)
+
+	# Butin au sol (65% de chance)
+	if randf() < 0.65:
+		var item: ItemData = ItemData.generate_random_item(level, global_position.length())
+		LootDrop.spawn(get_parent(), global_position + Vector3(0.0, 0.4, 0.0), item)
+
 	DeathParticles.spawn(get_parent(), global_position + Vector3(0.0, 0.5, 0.0), death_color)
 	queue_free()

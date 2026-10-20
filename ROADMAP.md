@@ -51,10 +51,22 @@
   - Remplacement de la caméra libre par le joueur dans [`Main.tscn`](file:///Z:/scenes/Main.tscn).
   - Validation headless réussie.
 
-- [ ] **Étape 4 : Système d'Inventaire & Objets (Items)**
-  - Structure de données d'inventaire et barre de raccourcis (hotbar).
-  - Objets, outils et ressources générés procéduralement.
-  - Système de fabrication basique (crafting).
+- [x] **Étape 4 : Système d'Objets (Items), Inventaire, XP & Sauvegarde**
+  - Objets procéduraux ([`item_data.gd`](file:///Z:/scripts/items/item_data.gd)) : Armes, Armures et Anneaux.
+  - 4 niveaux de rareté avec codes couleur : Commun (blanc), Rare (bleu), Épique (violet), Légendaire (or).
+  - Statistiques de combat aléatoires équilibrées (Attaque, Défense, PV Max, Endurance) influencées par la rareté et le niveau requis.
+  - Butin lumineux 3D au sol ([`loot_drop.gd`](file:///Z:/scripts/items/loot_drop.gd)) : cristal voxel en lévitation avec halo de la couleur de rareté et ramassage automatique au passage.
+  - Échelonnage des ennemis en fonction de la distance à l'origine (plus fort, plus résistant, meilleur butin).
+  - Système de progression RPG : gain d'XP sur les monstres abattus, montées de niveau avec restauration intégrale, augmentations de statistiques et bannières visuelles.
+  - Interface d'inventaire complète en grille 4x5 ([`inventory_ui.gd`](file:///Z:/scripts/ui/inventory_ui.gd)) accessible par la touche `I` :
+    - Gestion de l'équipement actif (Arme, Armure, Anneau) avec calcul des bonus cumulés.
+    - Panneau d'inspection avec comparaison instantanée des statistiques par rapport à l'équipement actuel (+ / - / =).
+    - Boutons d'équipement et de jet d'objet.
+    - Affichage en temps réel des statistiques complètes du héros (Attaque totale, Défense, PV Max, Endurance).
+  - Système de sauvegarde et de chargement JSON ([`save_system.gd`](file:///Z:/scripts/player/save_system.gd)) dans `user://save.json` :
+    - Sauvegarde automatique à la fermeture de l'inventaire et au passage de niveau.
+    - Chargement transparent au lancement du jeu (niveau, XP, PV, endurance, position 3D, inventaire et équipement).
+  - Validation headless réussie.
 
 - [x] **Étape 5 : Entités & Ennemis (Enemies) & Système de Combat**
   - 4 modèles d'ennemis voxel procéduraux construits en code :
