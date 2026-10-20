@@ -1,0 +1,16 @@
+# Ignorer tout le lecteur Z:\ par défaut
+/*
+
+# Fichiers et dossiers du projet Voxelands autorisés
+!/.gitignore
+!/GEMINI.md
+!/ROADMAP.md
+!/project.godot
+!/scripts/
+!/scripts/**
+!/scenes/
+!/scenes/**
+
+# Fichiers internes et cache de Godot
+.godot/
+*.tmp
