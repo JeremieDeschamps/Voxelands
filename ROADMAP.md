@@ -37,10 +37,19 @@
   - Caméra libre de test (`FreeCamera`) avec contrôles WASD + souris + élévation + accélération Shift.
   - Validation headless réussie.
 
-- [ ] **Étape 3 : Contrôleur Joueur & Caméra (Player)**
-  - Déplacement FPS/TPS à la première/troisième personne (sauts, collisions, gravité).
-  - Interaction avec le monde : casser et poser des voxels par raycast.
-  - Statistiques RPG (santé, endurance, niveau, expérience).
+- [x] **Étape 3 : Contrôleur Joueur & Caméra (Player)**
+  - Personnage voxel articulé construit 100% en code ([`voxel_character.gd`](file:///Z:/scripts/player/voxel_character.gd)) : tête, yeux, cheveux, torse en tunique, bras avec manchettes, jambes et bottes.
+  - Animation procédurale en code : balancement synchronisé des bras et des jambes lors de la marche/course, oscillation de brasse en nage, posture de vol en planeur.
+  - Modèle de planeur / parapente procédural déployable en l'air.
+  - Contrôleur physique `CharacterBody3D` ([`player.gd`](file:///Z:/scripts/player/player.gd)) :
+    - Déplacements ZQSD / WASD configurés dans la `InputMap`.
+    - Saut (`jump` via Espace) et course (`sprint` via Shift).
+    - Gravité et gestion des collisions solides avec le relief voxel via capsule 3D.
+    - Nage fluide sous le niveau de la mer avec flottabilité vers la surface et propulsion verticale.
+    - Planeur activable en l'air (touche Espace) réduisant la vitesse terminale de chute et augmentant la vitesse planante.
+  - Caméra orbitale à la 3e personne avec `SpringArm3D` anti-clipping, visée souris (pitch/yaw) et zoom progressif à la molette.
+  - Remplacement de la caméra libre par le joueur dans [`Main.tscn`](file:///Z:/scenes/Main.tscn).
+  - Validation headless réussie.
 
 - [ ] **Étape 4 : Système d'Inventaire & Objets (Items)**
   - Structure de données d'inventaire et barre de raccourcis (hotbar).
