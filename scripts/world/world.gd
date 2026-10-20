@@ -1,18 +1,21 @@
 class_name World
 extends Node3D
 
-## Gestionnaire du monde voxel infini par chunks avec génération multithreadée.
+## Gestionnaire du monde voxel infini par chunks avec biomes, décorations et graine reproductible.
 
 const Chunk = preload("res://scripts/world/chunk.gd")
 
+@export var world_seed: int = 1337
 @export var render_distance: int = 4
-@export var noise_seed: int = 1337
-@export var noise_frequency: float = 0.007
 @export var target_node: Node3D = null
 
 const MAX_CONCURRENT_TASKS: int = 4
 
-var noise: FastNoiseLite = FastNoiseLite.new()
+# Générateurs de bruit reproductibles
+var terrain_noise: FastNoiseLite = FastNoiseLite.new()
+var temperature_noise: FastNoiseLite = FastNoiseLite.new()
+var humidity_noise: FastNoiseLite = FastNoiseLite.new()
+
 var terrain_material: StandardMaterial3D = StandardMaterial3D.new()
 
 # Dictionnaires d'état des chunks
@@ -29,7 +32,7 @@ var update_timer: float = 0.0
 
 
 func _ready() -> void:
-	_init_noise()
+	_init_noises()
 	_init_material()
 
 	if target_node == null:
@@ -46,38 +49,44 @@ func _ready() -> void:
 
 
 func _exit_tree() -> void:
-	# Attente propre de la fin des tâches au déchargement
 	for task_id: int in active_tasks.keys():
 		WorkerThreadPool.wait_for_task_completion(task_id)
 	active_tasks.clear()
 
 
-func _init_noise() -> void:
-	noise.seed = noise_seed
-	noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
-	noise.frequency = noise_frequency
-	noise.fractal_octaves = 4
-	noise.fractal_lacunarity = 2.0
-	noise.fractal_gain = 0.5
+func _init_noises() -> void:
+	# 1. Relief et élévation
+	terrain_noise.seed = world_seed
+	terrain_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	terrain_noise.frequency = 0.006
+	terrain_noise.fractal_octaves = 4
+	terrain_noise.fractal_lacunarity = 2.0
+	terrain_noise.fractal_gain = 0.5
+
+	# 2. Carte de température des biomes (froid / tempéré / chaud)
+	temperature_noise.seed = world_seed + 101
+	temperature_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	temperature_noise.frequency = 0.002
+	temperature_noise.fractal_octaves = 2
+
+	# 3. Carte d'humidité des biomes (aride / modéré / luxuriant)
+	humidity_noise.seed = world_seed + 202
+	humidity_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	humidity_noise.frequency = 0.0025
+	humidity_noise.fractal_octaves = 2
 
 
 func _init_material() -> void:
 	terrain_material.vertex_color_use_as_albedo = true
-	terrain_material.roughness = 0.9
+	terrain_material.roughness = 0.85
 	terrain_material.cull_mode = BaseMaterial3D.CULL_BACK
 
 
 func _process(delta: float) -> void:
-	# 1. Vérification des tâches terminées dans le WorkerThreadPool
 	_check_worker_tasks()
-
-	# 2. Intégration sur le thread principal des maillages prêts
 	_process_completed_chunks()
-
-	# 3. Lancement des prochaines tâches en attente
 	_dispatch_pending_chunks()
 
-	# 4. Vérification périodique du déplacement de la caméra
 	update_timer += delta
 	if update_timer >= 0.2:
 		update_timer = 0.0
@@ -96,11 +105,10 @@ func _process(delta: float) -> void:
 				_update_chunks_around_target()
 
 
-## Met à jour les listes de chunks nécessaires et décharge les chunks distants
 func _update_chunks_around_target() -> void:
 	var target_chunk: Vector2i = last_player_chunk
 
-	# Déchargement des chunks hors de portée
+	# Déchargement des chunks éloignés
 	var unload_distance_sq: int = (render_distance + 2) * (render_distance + 2)
 	var coords_to_remove: Array[Vector2i] = []
 
@@ -116,7 +124,7 @@ func _update_chunks_around_target() -> void:
 		if is_instance_valid(chunk):
 			chunk.queue_free()
 
-	# Tri par proximité pour charger les chunks proches en priorité
+	# Priorisation des nouveaux chunks par distance
 	var new_coords: Array[Vector2i] = []
 	for dx in range(-render_distance, render_distance + 1):
 		for dz in range(-render_distance, render_distance + 1):
@@ -127,7 +135,6 @@ func _update_chunks_around_target() -> void:
 			if not active_chunks.has(coords) and not pending_coords.has(coords) and not _is_task_running_for(coords):
 				new_coords.append(coords)
 
-	# Tri par distance croissante à la cible
 	new_coords.sort_custom(func(a: Vector2i, b: Vector2i) -> bool:
 		var da: int = (a.x - target_chunk.x) * (a.x - target_chunk.x) + (a.y - target_chunk.y) * (a.y - target_chunk.y)
 		var db: int = (b.x - target_chunk.x) * (b.x - target_chunk.x) + (b.y - target_chunk.y) * (b.y - target_chunk.y)
@@ -145,7 +152,6 @@ func _is_task_running_for(coords: Vector2i) -> bool:
 	return false
 
 
-## Lance les tâches de calcul dans WorkerThreadPool
 func _dispatch_pending_chunks() -> void:
 	while active_tasks.size() < MAX_CONCURRENT_TASKS and not pending_coords.is_empty():
 		var coords: Vector2i = pending_coords.pop_front()
@@ -157,23 +163,24 @@ func _dispatch_pending_chunks() -> void:
 		active_tasks[task_id] = coords
 
 
-## Méthode exécutée dans le thread de travail (100% calcul pur de données)
+## Tâche de calcul en thread d'arrière-plan (Thread-safe)
 func _worker_task_generate(coords: Vector2i) -> void:
-	var gen_result: Dictionary = Chunk.generate_voxel_data(coords, noise)
+	var gen_result: Dictionary = Chunk.generate_voxel_data(coords, world_seed, terrain_noise, temperature_noise, humidity_noise)
 	var voxels: PackedByteArray = gen_result["voxels"]
 	var max_y: int = gen_result["max_y"]
-	var mesh_arrays: Array = Chunk.build_mesh_data(voxels, coords, max_y, noise)
+
+	var mesh_result: Dictionary = Chunk.build_mesh_data(voxels, coords, max_y, terrain_noise, temperature_noise, humidity_noise)
 
 	thread_mutex.lock()
 	completed_queue.append({
 		"coords": coords,
 		"voxels": voxels,
-		"mesh_arrays": mesh_arrays
+		"mesh_arrays": mesh_result["mesh_arrays"],
+		"collision_faces": mesh_result["collision_faces"]
 	})
 	thread_mutex.unlock()
 
 
-## Libère les tâches terminées dans le WorkerThreadPool
 func _check_worker_tasks() -> void:
 	var finished_tasks: Array[int] = []
 	for task_id: int in active_tasks.keys():
@@ -185,7 +192,7 @@ func _check_worker_tasks() -> void:
 		active_tasks.erase(task_id)
 
 
-## Intègre les maillages et collisions sur le thread principal
+## Intégration sur le thread principal
 func _process_completed_chunks() -> void:
 	var batch: Array[Dictionary] = []
 
@@ -199,6 +206,7 @@ func _process_completed_chunks() -> void:
 		var coords: Vector2i = item["coords"]
 		var voxels: PackedByteArray = item["voxels"]
 		var mesh_arrays: Array = item["mesh_arrays"]
+		var collision_faces: PackedVector3Array = item["collision_faces"]
 
 		var dx: int = coords.x - last_player_chunk.x
 		var dz: int = coords.y - last_player_chunk.y
@@ -208,5 +216,5 @@ func _process_completed_chunks() -> void:
 			var chunk := Chunk.new(coords)
 			chunk.voxels = voxels
 			add_child(chunk)
-			chunk.apply_mesh_and_collision(mesh_arrays, terrain_material)
+			chunk.apply_mesh_and_collision(mesh_arrays, collision_faces, terrain_material)
 			active_chunks[coords] = chunk

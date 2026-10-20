@@ -22,11 +22,18 @@
 - [x] **Étape 2 : Moteur Voxel Procédural (World)**
   - Chunks de 16x16x128 blocs avec calcul déterministe par `FastNoiseLite`.
   - Culling des faces internes cachées entre blocs adjacents.
-  - Couleurs par vertex pour chaque type de bloc (herbe, terre, pierre, sable, eau).
-  - Ambient Occlusion (AO) par vertex à 4 niveaux d'intensité et inversion des diagonales pour éviter les artefacts.
-  - Génération multithreadée asynchrone sans saccade via `WorkerThreadPool` avec pool de tâches limitées.
+  - Couleurs par vertex pour chaque type de bloc et ombrage Ambient Occlusion (AO).
+  - Génération multithreadée asynchrone sans saccade via `WorkerThreadPool`.
   - Chargement et déchargement infini dynamique autour de la cible (rayon configurable).
-  - Génération de collisions solides 3D via `ConcavePolygonShape3D` sur chaque chunk.
+  - Génération de collisions solides 3D via `ConcavePolygonShape3D` (avec traversée fluide des fleurs/herbes).
+  - Système de 6 Biomes pilotés par deux cartes de bruit (température et humidité) :
+    - Prairie (herbe vive, fleurs rouges et jaunes, herbes hautes, chênes).
+    - Forêt (herbe dense, chênes feuillus, bouleaux élancés).
+    - Désert (dunes de sable, grès, cactus à bras multiples, arbustes secs, rochers).
+    - Neige / Taïga (sol enneigé, pins coniques à aiguilles sombres).
+    - Montagnes (falaises de pierre et de roche, sommets enneigés, rochers).
+    - Océan & Plages (eau bleue au niveau de la mer y=32, plages de sable doré).
+  - Décor procédural déterministe par cellule avec graine maîtresse (`world_seed`) pour une reproductibilité intégrale.
   - Caméra libre de test (`FreeCamera`) avec contrôles WASD + souris + élévation + accélération Shift.
   - Validation headless réussie.
 

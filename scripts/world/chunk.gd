@@ -1,15 +1,16 @@
 class_name Chunk
 extends StaticBody3D
 
-## Représente un chunk de terrain voxel de 16x16x128 blocs.
+## Représente un chunk de terrain voxel de 16x16x128 blocs avec biomes et décorations.
 
 const BlockTypes = preload("res://scripts/world/block_types.gd")
+const DecorGenerator = preload("res://scripts/world/decor_generator.gd")
 
 const CHUNK_WIDTH: int = 16
 const CHUNK_DEPTH: int = 16
 const CHUNK_HEIGHT: int = 128
 const TOTAL_VOXELS: int = CHUNK_WIDTH * CHUNK_DEPTH * CHUNK_HEIGHT
-const SEA_LEVEL: int = 30
+const SEA_LEVEL: int = 32
 
 var chunk_coords: Vector2i = Vector2i.ZERO
 var voxels: PackedByteArray = PackedByteArray()
@@ -36,7 +37,7 @@ const FACE_VERTICES: Array[Array] = [
 	[Vector3(1, 0, 1), Vector3(1, 0, 0), Vector3(1, 1, 0), Vector3(1, 1, 1)]  # EAST
 ]
 
-# Vecteurs tangents (U, V) pour le calcul de l'occlusion ambiante (AO)
+# Vecteurs tangents (U, V) pour l'Ambient Occlusion (AO)
 const FACE_TANGENTS: Array[Array] = [
 	[Vector3i(-1, 0, 0), Vector3i(0, 0, 1)],  # UP
 	[Vector3i(-1, 0, 0), Vector3i(0, 0, -1)], # DOWN
@@ -60,42 +61,79 @@ static func get_voxel_index(x: int, y: int, z: int) -> int:
 ## Calcule la hauteur du relief de façon déterministe
 static func get_height_at(noise: FastNoiseLite, world_x: int, world_z: int) -> int:
 	var base_val: float = noise.get_noise_2d(float(world_x), float(world_z))
-	var h: float = 38.0 + (base_val * 24.0)
-	return clampi(int(round(h)), 1, CHUNK_HEIGHT - 2)
+	var h: float = 38.0 + (base_val * 26.0)
+	return clampi(int(round(h)), 2, CHUNK_HEIGHT - 12)
 
 
-## Détermine le type de bloc en coordonnées monde
-static func get_block_type_at(noise: FastNoiseLite, world_x: int, y: int, world_z: int) -> int:
+## Détermine le biome en fonction de la température, de l'humidité et de l'altitude
+static func get_biome_at(temp: float, humid: float, height: int) -> int:
+	if height <= SEA_LEVEL - 2:
+		return BlockTypes.Biome.OCEAN
+	if height <= SEA_LEVEL + 2:
+		return BlockTypes.Biome.BEACH
+	if height >= 56:
+		return BlockTypes.Biome.MOUNTAIN
+
+	if temp > 0.25 and humid < -0.05:
+		return BlockTypes.Biome.DESERT
+	if temp < -0.15:
+		return BlockTypes.Biome.SNOW
+	if humid > 0.18:
+		return BlockTypes.Biome.FOREST
+	return BlockTypes.Biome.PLAINS
+
+
+## Détermine le type de bloc selon le biome et la profondeur
+static func get_block_type_for_biome(biome: int, y: int, terrain_h: int) -> int:
 	if y <= 0:
 		return BlockTypes.Type.STONE
-	if y >= CHUNK_HEIGHT:
-		return BlockTypes.Type.AIR
-
-	var terrain_h: int = get_height_at(noise, world_x, world_z)
-
 	if y > terrain_h:
 		if y <= SEA_LEVEL:
 			return BlockTypes.Type.WATER
 		return BlockTypes.Type.AIR
 
-	if y == terrain_h:
-		if y <= SEA_LEVEL + 1:
-			return BlockTypes.Type.SAND
-		elif y >= 55:
-			return BlockTypes.Type.STONE
-		else:
-			return BlockTypes.Type.GRASS
+	var is_surface: bool = (y == terrain_h)
+	var is_subsurface: bool = (y > terrain_h - 4)
 
-	if y > terrain_h - 4:
-		if terrain_h <= SEA_LEVEL + 1:
-			return BlockTypes.Type.SAND
-		return BlockTypes.Type.DIRT
+	match biome:
+		BlockTypes.Biome.OCEAN:
+			return BlockTypes.Type.SAND if is_subsurface else BlockTypes.Type.STONE
+		BlockTypes.Biome.BEACH:
+			return BlockTypes.Type.SAND if is_subsurface else BlockTypes.Type.SANDSTONE
+		BlockTypes.Biome.DESERT:
+			return BlockTypes.Type.SAND if is_surface else (BlockTypes.Type.SANDSTONE if is_subsurface else BlockTypes.Type.STONE)
+		BlockTypes.Biome.SNOW:
+			return BlockTypes.Type.SNOW if is_surface else (BlockTypes.Type.SNOW_DIRT if is_subsurface else BlockTypes.Type.STONE)
+		BlockTypes.Biome.FOREST:
+			return BlockTypes.Type.FOREST_GRASS if is_surface else (BlockTypes.Type.DIRT if is_subsurface else BlockTypes.Type.STONE)
+		BlockTypes.Biome.MOUNTAIN:
+			if is_surface and y >= 64:
+				return BlockTypes.Type.SNOW
+			return BlockTypes.Type.ROCK if is_surface else BlockTypes.Type.STONE
+		_: # PLAINS
+			return BlockTypes.Type.GRASS if is_surface else (BlockTypes.Type.DIRT if is_subsurface else BlockTypes.Type.STONE)
 
-	return BlockTypes.Type.STONE
+
+## Détermine le bloc monde pour les voisins hors-limites (Thread-safe)
+static func get_world_block_at(coords: Vector2i, x: int, y: int, z: int, t_noise: FastNoiseLite, temp_noise: FastNoiseLite, hum_noise: FastNoiseLite) -> int:
+	if y <= 0:
+		return BlockTypes.Type.STONE
+	if y >= CHUNK_HEIGHT:
+		return BlockTypes.Type.AIR
+
+	var wx: int = (coords.x * CHUNK_WIDTH) + x
+	var wz: int = (coords.y * CHUNK_DEPTH) + z
+
+	var terrain_h: int = get_height_at(t_noise, wx, wz)
+	var temp: float = temp_noise.get_noise_2d(float(wx), float(wz))
+	var hum: float = hum_noise.get_noise_2d(float(wx), float(wz))
+	var biome: int = get_biome_at(temp, hum, terrain_h)
+
+	return get_block_type_for_biome(biome, y, terrain_h)
 
 
-## Génère les données de voxels sous forme de PackedByteArray pur (Thread-safe)
-static func generate_voxel_data(coords: Vector2i, noise: FastNoiseLite) -> Dictionary:
+## Génération complète des données de voxels du chunk + décorations (Thread-safe)
+static func generate_voxel_data(coords: Vector2i, master_seed: int, t_noise: FastNoiseLite, temp_noise: FastNoiseLite, hum_noise: FastNoiseLite) -> Dictionary:
 	var data := PackedByteArray()
 	data.resize(TOTAL_VOXELS)
 
@@ -103,36 +141,98 @@ static func generate_voxel_data(coords: Vector2i, noise: FastNoiseLite) -> Dicti
 	var world_origin_z: int = coords.y * CHUNK_DEPTH
 	var max_y: int = SEA_LEVEL
 
+	# 1. Génération du terrain de base et biomes
 	for x in range(CHUNK_WIDTH):
 		var wx: int = world_origin_x + x
 		for z in range(CHUNK_DEPTH):
 			var wz: int = world_origin_z + z
-			var terrain_h: int = get_height_at(noise, wx, wz)
+
+			var terrain_h: int = get_height_at(t_noise, wx, wz)
 			if terrain_h > max_y:
 				max_y = terrain_h
 
+			var temp: float = temp_noise.get_noise_2d(float(wx), float(wz))
+			var hum: float = hum_noise.get_noise_2d(float(wx), float(wz))
+			var biome: int = get_biome_at(temp, hum, terrain_h)
+
 			for y in range(CHUNK_HEIGHT):
-				var block: int = BlockTypes.Type.AIR
+				data[get_voxel_index(x, y, z)] = get_block_type_for_biome(biome, y, terrain_h)
 
-				if y <= terrain_h:
-					if y == terrain_h:
-						if y <= SEA_LEVEL + 1:
-							block = BlockTypes.Type.SAND
-						elif y >= 55:
-							block = BlockTypes.Type.STONE
-						else:
-							block = BlockTypes.Type.GRASS
-					elif y > terrain_h - 4:
-						if terrain_h <= SEA_LEVEL + 1:
-							block = BlockTypes.Type.SAND
-						else:
-							block = BlockTypes.Type.DIRT
-					else:
-						block = BlockTypes.Type.STONE
-				elif y <= SEA_LEVEL:
-					block = BlockTypes.Type.WATER
+	# 2. Placement des éléments de décor procéduraux
+	var min_cell_x: int = int(floor(float(world_origin_x - 4) / float(DecorGenerator.CELL_SIZE)))
+	var max_cell_x: int = int(floor(float(world_origin_x + CHUNK_WIDTH + 3) / float(DecorGenerator.CELL_SIZE)))
+	var min_cell_z: int = int(floor(float(world_origin_z - 4) / float(DecorGenerator.CELL_SIZE)))
+	var max_cell_z: int = int(floor(float(world_origin_z + CHUNK_DEPTH + 3) / float(DecorGenerator.CELL_SIZE)))
 
-				data[get_voxel_index(x, y, z)] = block
+	for cx in range(min_cell_x, max_cell_x + 1):
+		for cz in range(min_cell_z, max_cell_z + 1):
+			var h_val: int = DecorGenerator.hash2d(master_seed, cx, cz)
+			var rx: int = cx * DecorGenerator.CELL_SIZE + (h_val % (DecorGenerator.CELL_SIZE - 1))
+			var rz: int = cz * DecorGenerator.CELL_SIZE + ((h_val >> 4) % (DecorGenerator.CELL_SIZE - 1))
+
+			var ry: int = get_height_at(t_noise, rx, rz)
+			if ry <= SEA_LEVEL:
+				continue
+
+			var temp: float = temp_noise.get_noise_2d(float(rx), float(rz))
+			var hum: float = hum_noise.get_noise_2d(float(rx), float(rz))
+			var biome: int = get_biome_at(temp, hum, ry)
+			var roll: int = (h_val >> 8) % 100
+
+			match biome:
+				BlockTypes.Biome.DESERT:
+					if roll < 25:
+						DecorGenerator.place_cactus(data, coords, rx, ry + 1, rz, h_val)
+						if ry + 6 > max_y:
+							max_y = ry + 6
+					elif roll < 45:
+						DecorGenerator.set_voxel_safe(data, coords, rx, ry + 1, rz, BlockTypes.Type.DRY_SHRUB)
+					elif roll < 55:
+						DecorGenerator.place_boulder(data, coords, rx, ry + 1, rz, h_val)
+
+				BlockTypes.Biome.PLAINS:
+					if roll < 8:
+						DecorGenerator.place_oak_tree(data, coords, rx, ry + 1, rz, h_val)
+						if ry + 8 > max_y:
+							max_y = ry + 8
+					elif roll < 40:
+						DecorGenerator.set_voxel_safe(data, coords, rx, ry + 1, rz, BlockTypes.Type.TALL_GRASS)
+					elif roll < 55:
+						DecorGenerator.set_voxel_safe(data, coords, rx, ry + 1, rz, BlockTypes.Type.FLOWER_RED)
+					elif roll < 70:
+						DecorGenerator.set_voxel_safe(data, coords, rx, ry + 1, rz, BlockTypes.Type.FLOWER_YELLOW)
+					elif roll < 78:
+						DecorGenerator.place_boulder(data, coords, rx, ry + 1, rz, h_val)
+
+				BlockTypes.Biome.FOREST:
+					if roll < 35:
+						DecorGenerator.place_oak_tree(data, coords, rx, ry + 1, rz, h_val)
+						if ry + 8 > max_y:
+							max_y = ry + 8
+					elif roll < 60:
+						DecorGenerator.place_birch_tree(data, coords, rx, ry + 1, rz, h_val)
+						if ry + 10 > max_y:
+							max_y = ry + 10
+					elif roll < 80:
+						DecorGenerator.set_voxel_safe(data, coords, rx, ry + 1, rz, BlockTypes.Type.TALL_GRASS)
+					elif roll < 90:
+						DecorGenerator.set_voxel_safe(data, coords, rx, ry + 1, rz, BlockTypes.Type.FLOWER_RED)
+
+				BlockTypes.Biome.SNOW:
+					if roll < 45:
+						DecorGenerator.place_pine_tree(data, coords, rx, ry + 1, rz, h_val)
+						if ry + 12 > max_y:
+							max_y = ry + 12
+					elif roll < 60:
+						DecorGenerator.place_boulder(data, coords, rx, ry + 1, rz, h_val)
+
+				BlockTypes.Biome.MOUNTAIN:
+					if roll < 40:
+						DecorGenerator.place_boulder(data, coords, rx, ry + 1, rz, h_val)
+					elif roll < 55 and ry < 62:
+						DecorGenerator.place_pine_tree(data, coords, rx, ry + 1, rz, h_val)
+						if ry + 12 > max_y:
+							max_y = ry + 12
 
 	return {
 		"voxels": data,
@@ -141,7 +241,7 @@ static func generate_voxel_data(coords: Vector2i, noise: FastNoiseLite) -> Dicti
 
 
 ## Lecture d'un bloc local ou consultation du relief voisin
-static func get_block_from_data(data: PackedByteArray, coords: Vector2i, x: int, y: int, z: int, noise: FastNoiseLite) -> int:
+static func get_block_from_data(data: PackedByteArray, coords: Vector2i, x: int, y: int, z: int, t_noise: FastNoiseLite, temp_noise: FastNoiseLite, hum_noise: FastNoiseLite) -> int:
 	if y < 0:
 		return BlockTypes.Type.STONE
 	if y >= CHUNK_HEIGHT:
@@ -150,16 +250,14 @@ static func get_block_from_data(data: PackedByteArray, coords: Vector2i, x: int,
 	if x >= 0 and x < CHUNK_WIDTH and z >= 0 and z < CHUNK_DEPTH:
 		return data[get_voxel_index(x, y, z)]
 
-	var wx: int = (coords.x * CHUNK_WIDTH) + x
-	var wz: int = (coords.y * CHUNK_DEPTH) + z
-	return get_block_type_at(noise, wx, y, wz)
+	return get_world_block_at(coords, x, y, z, t_noise, temp_noise, hum_noise)
 
 
 ## Calcul de l'Ambient Occlusion par vertex (Thread-safe)
-static func compute_vertex_ao(data: PackedByteArray, coords: Vector2i, pos: Vector3i, norm: Vector3i, side1: Vector3i, side2: Vector3i, noise: FastNoiseLite) -> float:
-	var s1: bool = BlockTypes.is_opaque(get_block_from_data(data, coords, pos.x + norm.x + side1.x, pos.y + norm.y + side1.y, pos.z + norm.z + side1.z, noise))
-	var s2: bool = BlockTypes.is_opaque(get_block_from_data(data, coords, pos.x + norm.x + side2.x, pos.y + norm.y + side2.y, pos.z + norm.z + side2.z, noise))
-	var c: bool = BlockTypes.is_opaque(get_block_from_data(data, coords, pos.x + norm.x + side1.x + side2.x, pos.y + norm.y + side1.y + side2.y, pos.z + norm.z + side1.z + side2.z, noise))
+static func compute_vertex_ao(data: PackedByteArray, coords: Vector2i, pos: Vector3i, norm: Vector3i, side1: Vector3i, side2: Vector3i, t_noise: FastNoiseLite, temp_noise: FastNoiseLite, hum_noise: FastNoiseLite) -> float:
+	var s1: bool = BlockTypes.is_opaque(get_block_from_data(data, coords, pos.x + norm.x + side1.x, pos.y + norm.y + side1.y, pos.z + norm.z + side1.z, t_noise, temp_noise, hum_noise))
+	var s2: bool = BlockTypes.is_opaque(get_block_from_data(data, coords, pos.x + norm.x + side2.x, pos.y + norm.y + side2.y, pos.z + norm.z + side2.z, t_noise, temp_noise, hum_noise))
+	var c: bool = BlockTypes.is_opaque(get_block_from_data(data, coords, pos.x + norm.x + side1.x + side2.x, pos.y + norm.y + side1.y + side2.y, pos.z + norm.z + side1.z + side2.z, t_noise, temp_noise, hum_noise))
 
 	var ao_level: int = 0
 	if s1 and s2:
@@ -178,12 +276,13 @@ static func compute_vertex_ao(data: PackedByteArray, coords: Vector2i, pos: Vect
 			return 1.0
 
 
-## Construit les tableaux de géométrie sans aucune allocation de noeud (Thread-safe)
-static func build_mesh_data(data: PackedByteArray, coords: Vector2i, max_y: int, noise: FastNoiseLite) -> Array:
+## Construit les tableaux de géométrie pour le maillage et les collisions (Thread-safe)
+static func build_mesh_data(data: PackedByteArray, coords: Vector2i, max_y: int, t_noise: FastNoiseLite, temp_noise: FastNoiseLite, hum_noise: FastNoiseLite) -> Dictionary:
 	var vertices := PackedVector3Array()
 	var normals := PackedVector3Array()
 	var colors := PackedColorArray()
 	var indices := PackedInt32Array()
+	var collision_faces := PackedVector3Array()
 
 	var vertex_counter: int = 0
 
@@ -194,12 +293,79 @@ static func build_mesh_data(data: PackedByteArray, coords: Vector2i, max_y: int,
 				if block == BlockTypes.Type.AIR:
 					continue
 
-				var block_pos := Vector3i(x, y, z)
 				var base_offset := Vector3(x, y, z)
+
+				# Rendu spécial en croix pour les plantes (fleurs, herbes hautes, arbustes)
+				if BlockTypes.is_plant(block):
+					var plant_color: Color = BlockTypes.get_face_color(block, Vector3i.UP)
+
+					# Diagonale 1
+					var d1_v0: Vector3 = base_offset + Vector3(0.1, 0.0, 0.1)
+					var d1_v1: Vector3 = base_offset + Vector3(0.9, 0.0, 0.9)
+					var d1_v2: Vector3 = base_offset + Vector3(0.9, 0.85, 0.9)
+					var d1_v3: Vector3 = base_offset + Vector3(0.1, 0.85, 0.1)
+
+					vertices.push_back(d1_v0)
+					vertices.push_back(d1_v1)
+					vertices.push_back(d1_v2)
+					vertices.push_back(d1_v3)
+
+					for i in range(4):
+						normals.push_back(Vector3(0.707, 0, -0.707))
+						colors.push_back(plant_color)
+
+					# Double-face
+					indices.push_back(vertex_counter + 0)
+					indices.push_back(vertex_counter + 1)
+					indices.push_back(vertex_counter + 2)
+					indices.push_back(vertex_counter + 0)
+					indices.push_back(vertex_counter + 2)
+					indices.push_back(vertex_counter + 3)
+					indices.push_back(vertex_counter + 0)
+					indices.push_back(vertex_counter + 2)
+					indices.push_back(vertex_counter + 1)
+					indices.push_back(vertex_counter + 0)
+					indices.push_back(vertex_counter + 3)
+					indices.push_back(vertex_counter + 2)
+					vertex_counter += 4
+
+					# Diagonale 2
+					var d2_v0: Vector3 = base_offset + Vector3(0.1, 0.0, 0.9)
+					var d2_v1: Vector3 = base_offset + Vector3(0.9, 0.0, 0.1)
+					var d2_v2: Vector3 = base_offset + Vector3(0.9, 0.85, 0.1)
+					var d2_v3: Vector3 = base_offset + Vector3(0.1, 0.85, 0.9)
+
+					vertices.push_back(d2_v0)
+					vertices.push_back(d2_v1)
+					vertices.push_back(d2_v2)
+					vertices.push_back(d2_v3)
+
+					for i in range(4):
+						normals.push_back(Vector3(0.707, 0, 0.707))
+						colors.push_back(plant_color)
+
+					indices.push_back(vertex_counter + 0)
+					indices.push_back(vertex_counter + 1)
+					indices.push_back(vertex_counter + 2)
+					indices.push_back(vertex_counter + 0)
+					indices.push_back(vertex_counter + 2)
+					indices.push_back(vertex_counter + 3)
+					indices.push_back(vertex_counter + 0)
+					indices.push_back(vertex_counter + 2)
+					indices.push_back(vertex_counter + 1)
+					indices.push_back(vertex_counter + 0)
+					indices.push_back(vertex_counter + 3)
+					indices.push_back(vertex_counter + 2)
+					vertex_counter += 4
+					continue
+
+				# Rendu voxel cubique standard
+				var block_pos := Vector3i(x, y, z)
+				var is_block_solid: bool = BlockTypes.is_solid(block)
 
 				for face_idx in range(6):
 					var dir: Vector3i = FACE_DIRECTIONS[face_idx]
-					var neighbor_block: int = get_block_from_data(data, coords, x + dir.x, y + dir.y, z + dir.z, noise)
+					var neighbor_block: int = get_block_from_data(data, coords, x + dir.x, y + dir.y, z + dir.z, t_noise, temp_noise, hum_noise)
 
 					if BlockTypes.is_opaque(neighbor_block):
 						continue
@@ -215,39 +381,63 @@ static func build_mesh_data(data: PackedByteArray, coords: Vector2i, max_y: int,
 					var tan_v: Vector3i = tangents[1]
 
 					var ao_factors: Array[float] = [
-						compute_vertex_ao(data, coords, block_pos, dir, -tan_u, -tan_v, noise),
-						compute_vertex_ao(data, coords, block_pos, dir, -tan_u, tan_v, noise),
-						compute_vertex_ao(data, coords, block_pos, dir, tan_u, tan_v, noise),
-						compute_vertex_ao(data, coords, block_pos, dir, tan_u, -tan_v, noise)
+						compute_vertex_ao(data, coords, block_pos, dir, -tan_u, -tan_v, t_noise, temp_noise, hum_noise),
+						compute_vertex_ao(data, coords, block_pos, dir, -tan_u, tan_v, t_noise, temp_noise, hum_noise),
+						compute_vertex_ao(data, coords, block_pos, dir, tan_u, tan_v, t_noise, temp_noise, hum_noise),
+						compute_vertex_ao(data, coords, block_pos, dir, tan_u, -tan_v, t_noise, temp_noise, hum_noise)
 					]
 
+					var v0: Vector3 = base_offset + face_verts[0]
+					var v1: Vector3 = base_offset + face_verts[1]
+					var v2: Vector3 = base_offset + face_verts[2]
+					var v3: Vector3 = base_offset + face_verts[3]
+
+					vertices.push_back(v0)
+					vertices.push_back(v1)
+					vertices.push_back(v2)
+					vertices.push_back(v3)
+
 					for i in range(4):
-						vertices.push_back(base_offset + face_verts[i])
 						normals.push_back(face_norm)
-						var shaded_color := Color(
+						var shaded := Color(
 							base_color.r * ao_factors[i],
 							base_color.g * ao_factors[i],
 							base_color.b * ao_factors[i],
 							base_color.a
 						)
-						colors.push_back(shaded_color)
+						colors.push_back(shaded)
 
-					if ao_factors[0] + ao_factors[2] > ao_factors[1] + ao_factors[3]:
+					var flip: bool = (ao_factors[0] + ao_factors[2] > ao_factors[1] + ao_factors[3])
+					if flip:
 						indices.push_back(vertex_counter + 1)
 						indices.push_back(vertex_counter + 2)
 						indices.push_back(vertex_counter + 3)
-
 						indices.push_back(vertex_counter + 1)
 						indices.push_back(vertex_counter + 3)
 						indices.push_back(vertex_counter + 0)
+
+						if is_block_solid:
+							collision_faces.push_back(v1)
+							collision_faces.push_back(v2)
+							collision_faces.push_back(v3)
+							collision_faces.push_back(v1)
+							collision_faces.push_back(v3)
+							collision_faces.push_back(v0)
 					else:
 						indices.push_back(vertex_counter + 0)
 						indices.push_back(vertex_counter + 1)
 						indices.push_back(vertex_counter + 2)
-
 						indices.push_back(vertex_counter + 0)
 						indices.push_back(vertex_counter + 2)
 						indices.push_back(vertex_counter + 3)
+
+						if is_block_solid:
+							collision_faces.push_back(v0)
+							collision_faces.push_back(v1)
+							collision_faces.push_back(v2)
+							collision_faces.push_back(v0)
+							collision_faces.push_back(v2)
+							collision_faces.push_back(v3)
 
 					vertex_counter += 4
 
@@ -258,11 +448,14 @@ static func build_mesh_data(data: PackedByteArray, coords: Vector2i, max_y: int,
 	mesh_arrays[Mesh.ARRAY_COLOR] = colors
 	mesh_arrays[Mesh.ARRAY_INDEX] = indices
 
-	return mesh_arrays
+	return {
+		"mesh_arrays": mesh_arrays,
+		"collision_faces": collision_faces
+	}
 
 
 ## Applique le maillage et la collision sur le Chunk (Thread Principal)
-func apply_mesh_and_collision(mesh_arrays: Array, material: Material) -> void:
+func apply_mesh_and_collision(mesh_arrays: Array, collision_faces: PackedVector3Array, material: Material) -> void:
 	var vertices: PackedVector3Array = mesh_arrays[Mesh.ARRAY_VERTEX]
 	if vertices.is_empty():
 		return
@@ -277,10 +470,11 @@ func apply_mesh_and_collision(mesh_arrays: Array, material: Material) -> void:
 
 	mesh_instance.mesh = array_mesh
 
-	if collision_shape == null:
-		collision_shape = CollisionShape3D.new()
-		add_child(collision_shape)
+	if not collision_faces.is_empty():
+		if collision_shape == null:
+			collision_shape = CollisionShape3D.new()
+			add_child(collision_shape)
 
-	var shape := ConcavePolygonShape3D.new()
-	shape.set_faces(array_mesh.get_faces())
-	collision_shape.shape = shape
+		var shape := ConcavePolygonShape3D.new()
+		shape.set_faces(collision_faces)
+		collision_shape.shape = shape
