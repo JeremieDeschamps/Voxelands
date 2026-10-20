@@ -56,7 +56,7 @@ static func get_rarity_name(r: int) -> String:
 
 
 ## Génération procédurale d'un objet selon le niveau et l'éloignement
-static func generate_random_item(target_level: int, distance: float) -> RefCounted:
+static func generate_random_item(target_level: int, distance: float = 0.0) -> RefCounted:
 	var script: GDScript = load("res://scripts/items/item_data.gd")
 	var item: RefCounted = script.new()
 	item.level_req = maxi(target_level, 1)

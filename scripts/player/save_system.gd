@@ -22,8 +22,20 @@ static func save_game(player: CharacterBody3D, world_seed: int) -> bool:
 	if "player_class" in player:
 		p_class = player.player_class
 
+	var quests_data: Dictionary = {}
+	if ("quest_system" in player) and player.quest_system != null:
+		quests_data = player.quest_system.serialize()
+
+	var pet_data: Dictionary = {}
+	if ("active_companion" in player) and player.active_companion != null and is_instance_valid(player.active_companion):
+		pet_data = {
+			"species": player.active_companion.species_type,
+			"level": player.active_companion.pet_level,
+			"health": player.active_companion.current_health
+		}
+
 	var save_data := {
-		"version": 2,
+		"version": 3,
 		"timestamp": Time.get_datetime_string_from_system(),
 		"world_seed": world_seed,
 		"player": {
@@ -36,7 +48,9 @@ static func save_game(player: CharacterBody3D, world_seed: int) -> bool:
 			"position": [player.global_position.x, player.global_position.y, player.global_position.z],
 		},
 		"talents": talents_data,
-		"inventory": inv_data
+		"inventory": inv_data,
+		"quests": quests_data,
+		"companion": pet_data
 	}
 
 	var json_str: String = JSON.stringify(save_data, "\t")
@@ -91,6 +105,12 @@ static func load_game(player: CharacterBody3D) -> Dictionary:
 		var inv = player.get_node_or_null("InventoryManager")
 		if inv != null and "inventory" in data:
 			inv.from_dict(data["inventory"])
+
+		if ("quest_system" in player) and player.quest_system != null and "quests" in data:
+			player.quest_system.deserialize(data["quests"])
+
+		if "companion" in data and not data["companion"].is_empty() and player.has_method("spawn_saved_companion"):
+			player.spawn_saved_companion(data["companion"])
 
 	print("Sauvegarde chargée avec succès depuis : ", SAVE_PATH)
 	return data

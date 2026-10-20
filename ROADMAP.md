@@ -104,6 +104,33 @@
   - **Sauvegarde et persistance JSON** : classe active, rangs de talents et points disponibles persistés dans `user://save.json`.
   - Validation headless réussie.
 
+- [x] **Étape 5.6 : Animaux Apprivoisables, Villages & PNJ, Donjons & Boss, Carte & Boussole**
+  - **24 Espèces d'Animaux Apprivoisables & Compagnons de Combat** ([`companion_data.gd`](file:///Z:/scripts/player/companion_data.gd), [`pet_companion.gd`](file:///Z:/scripts/player/pet_companion.gd)) :
+    - Répartis sur les 6 biomes (Prairie, Forêt, Désert, Neige, Montagne, Océan/Plage) : Chiens de berger, Lapins géants, Ours bruns, Sangliers, Fennecs, Scarabées dorés, Loups arctiques, Léopards des neiges, Griffons nains, Faucons, Tortues de mer, Crabes royaux géants, etc.
+    - Apparition sauvage naturelle et apprivoisement de proximité via la touche `[F]`.
+    - IA de compagnon de combat : suit le joueur, attaque automatiquement les ennemis ciblant le héros, animation de bond offensif et dégâts proportionnels au niveau.
+    - Ordres donnables via la touche `[G]` (Suivre / Rester sur place).
+    - Widget d'état du compagnon intégré sur le HUD avec jauge de PV en temps réel.
+  - **Villages Procéduraux & PNJ Donneurs de Quêtes** ([`village_generator.gd`](file:///Z:/scripts/world/village_generator.gd), [`village_npc.gd`](file:///Z:/scripts/world/village_npc.gd)) :
+    - Génération déterministe par maillage de régions avec architecture adaptée à chaque biome (chaumières de prairie, maisons cubiques en adobe de désert, chalets en rondins de neige avec cheminées, fortins de pierre en montagne, cabanes sur pilotis sur le littoral).
+    - Places centrales avec puits, oasis, feux de camp ou braseros monumentaux.
+    - PNJ animés avec tenues spécifiques selon le biome et interactions par la touche `[F]`.
+    - Interface de dialogue modale ([`dialog_ui.gd`](file:///Z:/scripts/ui/dialog_ui.gd)) avec proposition et validation de quêtes.
+    - Système de quêtes dynamiques ([`quest_system.gd`](file:///Z:/scripts/player/quest_system.gd)) : Chasse aux monstres, exploration et boss, avec récompenses d'XP et équipements rares.
+    - Traqueur d'objectifs de quête affiché sur le HUD.
+  - **Donjons Souterrains, Coffres au Trésor & Boss Titanesque** ([`dungeon_generator.gd`](file:///Z:/scripts/world/dungeon_generator.gd)) :
+    - Entrée en surface via une crypte / mausolée de pierre avec descente d'escaliers sous terre.
+    - Complexe souterrain avec hall d'entrée, couloirs en pierre, salle de garde avec squelettes, chambre forte et arène de boss avec piliers.
+    - Coffres au trésor antiques ([`treasure_chest.gd`](file:///Z:/scripts/items/treasure_chest.gd)) avec couvercle articulé s'ouvrant à la touche `[F]` et délivrant du butin Épique/Légendaire.
+    - Boss Titanesque ([`dungeon_boss.gd`](file:///Z:/scripts/enemies/dungeon_boss.gd)) : Titan Gorgaroth avec marteau géant, attaques de zone sismiques, invocation d'acolytes à 50% de vie et butin exceptionnel.
+    - Jauge de vie de Boss majestueuse ([`boss_bar_ui.gd`](file:///Z:/scripts/ui/boss_bar_ui.gd)) affichée au centre haut de l'écran.
+  - **Boussole Dynamique & Carte du Monde (Touche M)** :
+    - Boussole horizontale sur le HUD ([`compass_ui.gd`](file:///Z:/scripts/ui/compass_ui.gd)) avec ruban à 360°, points cardinaux (N, NE, E, SE, S, SW, W, NW) et marqueurs de proximité pour le village le plus proche (🏠), le donjon (💀) et le compagnon (🐾).
+    - Carte du monde interactive plein écran ([`world_map_ui.gd`](file:///Z:/scripts/ui/world_map_ui.gd)) accessible avec `[M]` affichant les biomes en couleur 2D générés par le relief, position et angle de visée du joueur, villages, donjons et coordonnées GPS.
+  - **Persistance & Sauvegarde Complète** ([`save_system.gd`](file:///Z:/scripts/player/save_system.gd)) :
+    - Quêtes actives, terminées, et statut du compagnon actif sauvegardés dans `user://save.json`.
+  - Validation headless réussie.
+
 - [ ] **Étape 6 : Générateur Audio Procédural**
   - Synthèse sonore en temps réel via `AudioStreamGenerator` (bruits de pas, casse de bloc, coup, musique d'ambiance 8/16-bit synthétisée).
 

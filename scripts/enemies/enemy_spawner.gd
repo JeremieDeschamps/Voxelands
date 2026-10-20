@@ -10,8 +10,11 @@ const WolfEnemy = preload("res://scripts/enemies/wolf.gd")
 const SkeletonEnemy = preload("res://scripts/enemies/skeleton.gd")
 const SlimeEnemy = preload("res://scripts/enemies/slime.gd")
 const GolemEnemy = preload("res://scripts/enemies/golem.gd")
+const PetCompanion = preload("res://scripts/player/pet_companion.gd")
+const CompanionData = preload("res://scripts/player/companion_data.gd")
 
 @export var max_enemies: int = 14
+@export var max_wild_animals: int = 8
 @export var spawn_interval: float = 3.5
 @export var min_spawn_dist: float = 18.0
 @export var max_spawn_dist: float = 38.0
@@ -65,6 +68,23 @@ func _attempt_spawn() -> void:
 	var temp: float = temp_noise.get_noise_2d(float(sx), float(sz))
 	var hum: float = hum_noise.get_noise_2d(float(sx), float(sz))
 	var biome: int = Chunk.get_biome_at(temp, hum, sy)
+
+	# Chance d'apparition d'un animal sauvage apprivoisable (35% des apparitions)
+	var wild_animals: Array[Node] = get_tree().get_nodes_in_group("companions")
+	var untamed_count: int = 0
+	for a in wild_animals:
+		if a is PetCompanion and not a.is_tamed:
+			untamed_count += 1
+
+	if untamed_count < max_wild_animals and randf() < 0.35:
+		var species_list: Array[int] = CompanionData.get_species_for_biome(biome)
+		var sp_id: int = species_list[randi() % species_list.size()]
+		var animal := PetCompanion.new()
+		animal.species_type = sp_id
+		animal.is_tamed = false
+		animal.position = Vector3(float(sx), float(sy) + 0.8, float(sz))
+		add_child(animal)
+		return
 
 	var enemy_instance: EnemyBase = null
 	var roll: float = randf()
@@ -121,3 +141,10 @@ func _cleanup_distant_enemies() -> void:
 		if is_instance_valid(enemy):
 			if enemy.global_position.distance_to(player_pos) > despawn_dist:
 				enemy.queue_free()
+
+	# Nettoyage des animaux sauvages non apprivoisés distants
+	var companions := get_tree().get_nodes_in_group("companions")
+	for comp in companions:
+		if comp is PetCompanion and is_instance_valid(comp):
+			if not comp.is_tamed and comp.global_position.distance_to(player_pos) > despawn_dist:
+				comp.queue_free()

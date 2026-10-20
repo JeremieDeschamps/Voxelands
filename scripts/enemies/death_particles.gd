@@ -29,7 +29,7 @@ func _ready() -> void:
 	mesh = cube_mesh
 
 
-static func spawn(parent: Node, spawn_pos: Vector3, debris_color: Color) -> CPUParticles3D:
+static func spawn(parent: Node, spawn_pos: Vector3, debris_color: Color = Color.WHITE) -> CPUParticles3D:
 	var script: GDScript = load("res://scripts/enemies/death_particles.gd")
 	var particles: CPUParticles3D = script.new()
 	particles.position = spawn_pos

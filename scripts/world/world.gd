@@ -4,12 +4,18 @@ extends Node3D
 ## Gestionnaire du monde voxel infini par chunks avec biomes, décorations et graine reproductible.
 
 const Chunk = preload("res://scripts/world/chunk.gd")
+const VillageGenerator = preload("res://scripts/world/village_generator.gd")
+const DungeonGenerator = preload("res://scripts/world/dungeon_generator.gd")
 
 @export var world_seed: int = 1337
 @export var render_distance: int = 4
 @export var target_node: Node3D = null
 
 const MAX_CONCURRENT_TASKS: int = 4
+
+var village_generator: VillageGenerator = null
+var dungeon_generator: DungeonGenerator = null
+
 
 # Générateurs de bruit reproductibles
 var terrain_noise: FastNoiseLite = FastNoiseLite.new()
@@ -34,6 +40,16 @@ var update_timer: float = 0.0
 func _ready() -> void:
 	_init_noises()
 	_init_material()
+
+	village_generator = VillageGenerator.new()
+	village_generator.name = "VillageGenerator"
+	village_generator.setup(world_seed, terrain_noise, temperature_noise, humidity_noise)
+	add_child(village_generator)
+
+	dungeon_generator = DungeonGenerator.new()
+	dungeon_generator.name = "DungeonGenerator"
+	dungeon_generator.setup(world_seed, terrain_noise)
+	add_child(dungeon_generator)
 
 	if target_node == null:
 		target_node = get_viewport().get_camera_3d()
@@ -103,6 +119,11 @@ func _process(delta: float) -> void:
 			if current_chunk != last_player_chunk:
 				last_player_chunk = current_chunk
 				_update_chunks_around_target()
+
+			if village_generator != null:
+				village_generator.update_villages_around(target_pos)
+			if dungeon_generator != null:
+				dungeon_generator.update_dungeons_around(target_pos)
 
 
 func _update_chunks_around_target() -> void:

@@ -245,9 +245,20 @@ func take_damage(amount: float, from_position: Vector3 = Vector3.ZERO) -> void:
 func die() -> void:
 	current_state = State.DEAD
 
-	# Don d'expérience au joueur
-	if target_player != null and is_instance_valid(target_player) and target_player.has_method("add_xp"):
-		target_player.add_xp(18 * level)
+	# Don d'expérience et notification de quête au joueur
+	if target_player != null and is_instance_valid(target_player):
+		if target_player.has_method("add_xp"):
+			target_player.add_xp(18 * level)
+		if ("quest_system" in target_player) and target_player.quest_system != null:
+			var et: String = "wolf"
+			var nm: String = enemy_name.to_lower()
+			if "squelette" in nm or "skeleton" in nm:
+				et = "skeleton"
+			elif "slime" in nm:
+				et = "slime"
+			elif "golem" in nm:
+				et = "golem"
+			target_player.quest_system.notify_kill(et)
 
 	# Butin au sol (65% de chance)
 	if randf() < 0.65:

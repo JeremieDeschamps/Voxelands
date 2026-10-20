@@ -14,6 +14,11 @@ const SaveSystem = preload("res://scripts/player/save_system.gd")
 const PlayerClassData = preload("res://scripts/player/player_class_data.gd")
 const TalentTree = preload("res://scripts/player/talent_tree.gd")
 const ClassSelectUI = preload("res://scripts/ui/class_select_ui.gd")
+const QuestSystem = preload("res://scripts/player/quest_system.gd")
+const DialogUI = preload("res://scripts/ui/dialog_ui.gd")
+const WorldMapUI = preload("res://scripts/ui/world_map_ui.gd")
+const PetCompanion = preload("res://scripts/player/pet_companion.gd")
+const CompanionData = preload("res://scripts/player/companion_data.gd")
 
 # Caractéristiques physiques
 @export var walk_speed: float = 6.0
@@ -56,6 +61,10 @@ var hud: PlayerHUD = null
 var inventory: InventoryManager = null
 var inventory_ui: InventoryUI = null
 var class_select_ui: ClassSelectUI = null
+var quest_system: QuestSystem = null
+var dialog_ui: DialogUI = null
+var world_map_ui: WorldMapUI = null
+var active_companion: PetCompanion = null
 
 # États du joueur
 var is_gliding: bool = false
@@ -103,6 +112,9 @@ func _setup_inputs_if_missing() -> void:
 	_register_key_action("sprint", [KEY_SHIFT])
 	_register_key_action("skill_2", [KEY_E])
 	_register_key_action("skill_3", [KEY_R])
+	_register_key_action("interact", [KEY_F])
+	_register_key_action("open_map", [KEY_M])
+	_register_key_action("pet_command", [KEY_G])
 
 
 func _register_key_action(action: String, keycodes: Array[int]) -> void:
@@ -168,6 +180,25 @@ func _build_player_components() -> void:
 	add_child(class_select_ui)
 	class_select_ui.class_selected.connect(set_player_class)
 
+	# 7. Système de Quêtes
+	quest_system = QuestSystem.new()
+	quest_system.quest_added.connect(func(_q): if hud != null: hud.update_quest_tracker(quest_system.active_quests))
+	quest_system.quest_updated.connect(func(_q): if hud != null: hud.update_quest_tracker(quest_system.active_quests))
+	quest_system.quest_completed.connect(func(_q): if hud != null: hud.update_quest_tracker(quest_system.active_quests))
+	quest_system.quest_claimed.connect(func(_q): if hud != null: hud.update_quest_tracker(quest_system.active_quests))
+
+	# 8. Interface de Dialogue PNJ
+	dialog_ui = DialogUI.new()
+	dialog_ui.name = "DialogUI"
+	add_child(dialog_ui)
+
+	# 9. Carte du Monde
+	world_map_ui = WorldMapUI.new()
+	world_map_ui.name = "WorldMapUI"
+	add_child(world_map_ui)
+	var world_node = get_node_or_null("../World")
+	world_map_ui.setup(self, world_node)
+
 
 func set_player_class(c_type: int, save: bool = true) -> void:
 	player_class = c_type
@@ -196,7 +227,7 @@ func get_class_name_str() -> String:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if (inventory_ui != null and inventory_ui.is_open) or (class_select_ui != null and class_select_ui.is_open):
+	if (inventory_ui != null and inventory_ui.is_open) or (class_select_ui != null and class_select_ui.is_open) or (dialog_ui != null and dialog_ui.is_open) or (world_map_ui != null and world_map_ui.is_open):
 		return
 
 	if event is InputEventMouseButton:
@@ -224,6 +255,14 @@ func _unhandled_input(event: InputEvent) -> void:
 				_use_skill(2) # Compétence 2 (E)
 			elif event.is_action_pressed("skill_3"):
 				_use_skill(3) # Compétence 3 (R)
+			elif event.is_action_pressed("interact"):
+				_interact_with_target() # Interaction (F)
+			elif event.is_action_pressed("open_map"):
+				if world_map_ui != null:
+					world_map_ui.toggle_map() # Carte (M)
+			elif event.is_action_pressed("pet_command"):
+				if active_companion != null and is_instance_valid(active_companion):
+					active_companion.toggle_command() # Ordre (G)
 
 	elif event is InputEventMouseMotion and is_mouse_captured:
 		cam_yaw -= event.relative.x * mouse_sensitivity
@@ -474,6 +513,7 @@ func _physics_process(delta: float) -> void:
 		hud.update_health(current_health, get_effective_max_health())
 		hud.update_stamina(current_stamina, get_effective_max_stamina())
 		hud.update_skill_cooldowns(skill_cooldowns, skill_max_cooldowns)
+		_update_hud_navigation()
 
 
 func add_xp(amount: int) -> void:
@@ -564,3 +604,90 @@ func _capture_mouse() -> void:
 func _release_mouse() -> void:
 	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
 	is_mouse_captured = false
+
+
+func _update_hud_navigation() -> void:
+	if hud == null or hud.compass_bar == null:
+		return
+
+	var world = get_node_or_null("../World")
+	var v_pos: Vector3 = Vector3.ZERO
+	var v_name: String = ""
+	var d_pos: Vector3 = Vector3.ZERO
+	var d_name: String = ""
+	var pet_p: Vector3 = Vector3.ZERO
+
+	if world != null:
+		if ("village_generator" in world) and world.village_generator != null:
+			var v_info: Dictionary = world.village_generator.get_nearest_village(global_position)
+			if not v_info.is_empty():
+				v_pos = v_info["position"]
+				v_name = v_info["name"]
+
+		if ("dungeon_generator" in world) and world.dungeon_generator != null:
+			var d_info: Dictionary = world.dungeon_generator.get_nearest_dungeon(global_position)
+			if not d_info.is_empty():
+				d_pos = d_info["surface_position"]
+				d_name = d_info["name"]
+
+	if active_companion != null and is_instance_valid(active_companion):
+		pet_p = active_companion.global_position
+		hud.update_companion_hud(active_companion)
+	else:
+		hud.update_companion_hud(null)
+
+	hud.compass_bar.update_data(global_position, cam_yaw, v_pos, v_name, d_pos, d_name, pet_p)
+
+
+func _interact_with_target() -> void:
+	# 1. PNJ de village
+	var npcs: Array[Node] = get_tree().get_nodes_in_group("npcs")
+	for n in npcs:
+		if n is CharacterBody3D and is_instance_valid(n):
+			if global_position.distance_to(n.global_position) <= 3.8:
+				if n.has_method("interact"):
+					n.interact(self)
+					return
+
+	# 2. Coffres aux trésors
+	var chests: Array[Node] = get_tree().get_nodes_in_group("chests")
+	for c in chests:
+		if is_instance_valid(c):
+			if global_position.distance_to(c.global_position) <= 3.8:
+				if c.has_method("open_chest"):
+					c.open_chest(self)
+					return
+
+	# 3. Animaux sauvages apprivoisables
+	var animals: Array[Node] = get_tree().get_nodes_in_group("companions")
+	for a in animals:
+		if a is PetCompanion and is_instance_valid(a):
+			if not a.is_tamed and global_position.distance_to(a.global_position) <= 4.0:
+				a.tame(self)
+				active_companion = a
+				if hud != null:
+					hud.update_companion_hud(a)
+				var lbl: Label3D = DamageLabel3D.spawn(get_parent(), a.global_position + Vector3(0, 1.2, 0), 0, true)
+				var cfg: Dictionary = CompanionData.get_config(a.species_type)
+				lbl.text = "🐾 %s Apprivoisé !" % cfg.get("name", "Animal")
+				lbl.modulate = Color(0.3, 1.0, 0.4)
+				_save_current_game()
+				return
+
+
+func spawn_saved_companion(pet_dict: Dictionary) -> void:
+	if pet_dict.is_empty():
+		return
+	var animal := PetCompanion.new()
+	animal.species_type = int(pet_dict.get("species", 0))
+	animal.pet_level = int(pet_dict.get("level", 1))
+	animal.is_tamed = true
+	animal.position = global_position + Vector3(1.5, 0.5, 1.5)
+	get_parent().call_deferred("add_child", animal)
+
+	animal.call_deferred("tame", self)
+	animal.current_health = float(pet_dict.get("health", animal.max_health))
+	active_companion = animal
+	if hud != null:
+		hud.update_companion_hud(animal)
+

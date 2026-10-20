@@ -4,12 +4,27 @@ extends CanvasLayer
 ## Interface tête haute (HUD) avec barres de vie, d'endurance, réticule et compteur FPS.
 
 const SkillBarUI = preload("res://scripts/ui/skill_bar_ui.gd")
+const CompassUI = preload("res://scripts/ui/compass_ui.gd")
+const BossBarUI = preload("res://scripts/ui/boss_bar_ui.gd")
 
 var health_bar: ProgressBar = null
 var stamina_bar: ProgressBar = null
 var fps_label: Label = null
 var hurt_flash: ColorRect = null
 var skill_bar: SkillBarUI = null
+var compass_bar: CompassUI = null
+var boss_bar: BossBarUI = null
+
+# Widget Compagnon
+var pet_container: Panel = null
+var pet_name_label: Label = null
+var pet_hp_bar: ProgressBar = null
+var pet_command_label: Label = null
+
+# Traqueur de Quêtes
+var quest_container: Panel = null
+var quest_list_label: Label = null
+
 var flash_timer: float = 0.0
 
 
@@ -66,6 +81,127 @@ func _create_ui_elements() -> void:
 	skill_bar = SkillBarUI.new()
 	skill_bar.name = "SkillBarUI"
 	add_child(skill_bar)
+
+	# 6. Boussole en haut au centre
+	compass_bar = CompassUI.new()
+	compass_bar.name = "CompassUI"
+	add_child(compass_bar)
+
+	# 7. Jauge de Boss de donjon
+	boss_bar = BossBarUI.new()
+	boss_bar.name = "BossBarUI"
+	add_child(boss_bar)
+
+	# 8. Widget Compagnon au-dessus des jauges du joueur
+	pet_container = Panel.new()
+	pet_container.name = "PetWidget"
+	pet_container.size = Vector2(240.0, 52.0)
+	pet_container.position = Vector2(24.0, 560.0)
+	var pet_sb := StyleBoxFlat.new()
+	pet_sb.bg_color = Color(0.10, 0.14, 0.18, 0.85)
+	pet_sb.border_width_left = 2
+	pet_sb.border_width_top = 2
+	pet_sb.border_width_right = 2
+	pet_sb.border_width_bottom = 2
+	pet_sb.border_color = Color(0.35, 0.85, 0.95)
+	pet_sb.corner_radius_top_left = 4
+	pet_sb.corner_radius_top_right = 4
+	pet_sb.corner_radius_bottom_left = 4
+	pet_sb.corner_radius_bottom_right = 4
+	pet_container.add_theme_stylebox_override("panel", pet_sb)
+	pet_container.visible = false
+	add_child(pet_container)
+
+	pet_name_label = Label.new()
+	pet_name_label.position = Vector2(8.0, 4.0)
+	pet_name_label.text = "🐾 Compagnon"
+	pet_name_label.add_theme_color_override("font_color", Color(0.35, 0.90, 0.95))
+	pet_container.add_child(pet_name_label)
+
+	pet_command_label = Label.new()
+	pet_command_label.position = Vector2(160.0, 4.0)
+	pet_command_label.text = "[G: Ordre]"
+	pet_command_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.75))
+	pet_container.add_child(pet_command_label)
+
+	pet_hp_bar = _create_styled_bar(Color(0.25, 0.85, 0.45), Color(0.12, 0.16, 0.14), "Compagnon")
+	pet_hp_bar.custom_minimum_size = Vector2(224.0, 14.0)
+	pet_hp_bar.position = Vector2(8.0, 28.0)
+	pet_container.add_child(pet_hp_bar)
+
+	# 9. Traqueur de Quêtes en haut à droite
+	quest_container = Panel.new()
+	quest_container.name = "QuestTracker"
+	quest_container.size = Vector2(280.0, 140.0)
+	quest_container.position = Vector2(976.0, 20.0)
+	var q_sb := StyleBoxFlat.new()
+	q_sb.bg_color = Color(0.08, 0.10, 0.14, 0.82)
+	q_sb.border_width_left = 2
+	q_sb.border_width_top = 2
+	q_sb.border_width_right = 2
+	q_sb.border_width_bottom = 2
+	q_sb.border_color = Color(0.75, 0.65, 0.25)
+	q_sb.corner_radius_top_left = 6
+	q_sb.corner_radius_top_right = 6
+	q_sb.corner_radius_bottom_left = 6
+	q_sb.corner_radius_bottom_right = 6
+	quest_container.add_theme_stylebox_override("panel", q_sb)
+	add_child(quest_container)
+
+	var q_title := Label.new()
+	q_title.position = Vector2(10.0, 6.0)
+	q_title.text = "📜 OBJECTIFS ACTIFS"
+	q_title.add_theme_color_override("font_color", Color(0.95, 0.85, 0.35))
+	quest_container.add_child(q_title)
+
+	quest_list_label = Label.new()
+	quest_list_label.position = Vector2(10.0, 32.0)
+	quest_list_label.size = Vector2(260.0, 100.0)
+	quest_list_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	quest_list_label.text = "Aucune quête active.\nVisitez un village pour en obtenir !"
+	quest_list_label.add_theme_color_override("font_color", Color(0.85, 0.85, 0.9))
+	quest_container.add_child(quest_list_label)
+
+
+func update_companion_hud(pet_node: Node) -> void:
+	if pet_node == null or not is_instance_valid(pet_node):
+		if pet_container != null:
+			pet_container.visible = false
+		return
+
+	if pet_container != null:
+		pet_container.visible = true
+
+	var cur_hp: float = pet_node.current_health if "current_health" in pet_node else 100.0
+	var max_hp: float = pet_node.max_health if "max_health" in pet_node else 100.0
+	var sp_type: int = pet_node.species_type if "species_type" in pet_node else 0
+	var p_lvl: int = pet_node.pet_level if "pet_level" in pet_node else 1
+
+	var c_cfg: Dictionary = pet_node.CompanionData.get_config(sp_type) if ("CompanionData" in pet_node and pet_node.CompanionData != null) else {}
+	var pet_n: String = c_cfg.get("name", "Animal")
+
+	if pet_name_label != null:
+		pet_name_label.text = "🐾 %s (Niv.%d)" % [pet_n, p_lvl]
+
+	if pet_hp_bar != null:
+		pet_hp_bar.max_value = max_hp
+		pet_hp_bar.value = cur_hp
+
+
+func update_quest_tracker(active_quests: Array[Dictionary]) -> void:
+	if quest_list_label == null:
+		return
+
+	if active_quests.is_empty():
+		quest_list_label.text = "Aucune quête active.\nVisitez un village pour en obtenir !"
+		return
+
+	var txt: String = ""
+	for q in active_quests:
+		var status: String = " ✅ Terminée !" if q.get("is_completed", false) else " (%d/%d)" % [q.get("current_count", 0), q.get("required_count", 1)]
+		txt += "• %s%s\n" % [q.get("title", "Quête"), status]
+
+	quest_list_label.text = txt
 
 
 func setup_skill_bar(c_type: int) -> void:
