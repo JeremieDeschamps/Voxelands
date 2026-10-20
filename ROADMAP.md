@@ -8,9 +8,16 @@
   - Mise en place de l'arborescence (`scripts/`, `scenes/`) et des directives strictes.
 
 - [x] **Étape 1 : Initialisation du projet Godot & Scène Principale**
-  - Fichier `project.godot` configuré (nom, rendu, inputs, etc.).
-  - Scène principale `main.tscn` créée.
-  - Validation headless réussie (Godot v4.7.2 stable officiel).
+  - Fichier `project.godot` configuré avec `res://scenes/Main.tscn` comme scène de démarrage.
+  - Scène principale `Main.tscn` avec :
+    - Ciel procédural à dégradé (`ProceduralSkyMaterial`).
+    - Brouillard volumétrique/distance (`fog_enabled = true`).
+    - `DirectionalLight3D` avec ombres activées.
+    - `Camera3D` positionnée et orientée.
+    - Cube de test 3D (`MeshInstance3D`).
+    - Compteur FPS en haut à gauche (`CanvasLayer` + `fps_counter.gd`).
+  - Arborescence complète créée (`scripts/world/`, `player/`, `enemies/`, `items/`, `ui/`, `scenes/`).
+  - Validation headless réussie sans erreur.
 
 - [ ] **Étape 2 : Moteur Voxel Procédural (World)**
   - Générateur de terrain voxel par code (ArrayMesh / SurfaceTool, couleurs par vertex).
