@@ -52,6 +52,8 @@ const FACE_TANGENTS: Array[Array] = [
 func _init(coords: Vector2i = Vector2i.ZERO) -> void:
 	chunk_coords = coords
 	position = Vector3(chunk_coords.x * CHUNK_WIDTH, 0, chunk_coords.y * CHUNK_DEPTH)
+	collision_layer = 1
+	collision_mask = 0
 
 
 ## Indexation linéaire d'un voxel dans le chunk

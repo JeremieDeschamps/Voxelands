@@ -115,3 +115,13 @@ func _build_ui() -> void:
 
 		hbox.add_child(panel)
 		skill_panels.append(panel)
+
+	_set_ignore_mouse_recursive(self)
+
+
+func _set_ignore_mouse_recursive(node: Node) -> void:
+	if node is Control:
+		node.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		node.focus_mode = Control.FOCUS_NONE
+	for child in node.get_children():
+		_set_ignore_mouse_recursive(child)

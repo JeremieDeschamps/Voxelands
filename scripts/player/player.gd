@@ -77,6 +77,7 @@ var footstep_timer: float = 0.0
 var is_gliding: bool = false
 var is_swimming: bool = false
 var is_mouse_captured: bool = false
+var is_terrain_ready: bool = false
 
 # Invincibilité temporaire (i-frames)
 var invincibility_timer: float = 0.0
@@ -87,6 +88,55 @@ var cam_yaw: float = 0.0
 var cam_pitch: float = -0.2
 
 var gravity: float = 19.6
+
+
+func _is_any_menu_open() -> bool:
+	if main_menu_ui != null and main_menu_ui.is_open:
+		return true
+	if class_select_ui != null and class_select_ui.is_open:
+		return true
+	if pause_menu_ui != null and pause_menu_ui.is_open:
+		return true
+	if inventory_ui != null and inventory_ui.is_open:
+		return true
+	if world_map_ui != null and world_map_ui.is_open:
+		return true
+	if dialog_ui != null and dialog_ui.is_open:
+		return true
+	return false
+
+
+func _get_chunk_at_coords(chunk_coords: Vector2i) -> Chunk:
+	var world = get_node_or_null("../World")
+	if world != null and ("active_chunks" in world) and world.active_chunks != null:
+		return world.active_chunks.get(chunk_coords, null) as Chunk
+	return null
+
+
+func _get_block_type_at(world_pos: Vector3) -> int:
+	var bx: int = int(floor(world_pos.x))
+	var by: int = int(floor(world_pos.y))
+	var bz: int = int(floor(world_pos.z))
+	if by < 0 or by >= Chunk.CHUNK_HEIGHT:
+		return 0 # Air
+
+	var cx: int = int(floor(float(bx) / float(Chunk.CHUNK_WIDTH)))
+	var cz: int = int(floor(float(bz) / float(Chunk.CHUNK_DEPTH)))
+	var chunk: Chunk = _get_chunk_at_coords(Vector2i(cx, cz))
+	if chunk == null or chunk.voxels.is_empty():
+		return 0
+
+	var lx: int = posmod(bx, Chunk.CHUNK_WIDTH)
+	var lz: int = posmod(bz, Chunk.CHUNK_DEPTH)
+	var idx: int = Chunk.get_voxel_index(lx, by, lz)
+	if idx >= 0 and idx < chunk.voxels.size():
+		return chunk.voxels[idx]
+	return 0
+
+
+func _is_solid_block(b_type: int) -> bool:
+	# 0: AIR, 7: WATER, 8: FLOWER_RED, 9: FLOWER_YELLOW, 10: TALL_GRASS, 11: DRY_SHRUB
+	return b_type != 0 and b_type != 7 and b_type < 8
 
 
 func _ready() -> void:
@@ -115,10 +165,10 @@ func _on_start_game_from_menu(is_new_game: bool) -> void:
 			class_select_ui.open_selection()
 		else:
 			_apply_class_visuals()
+			_capture_mouse()
 
 	current_health = get_effective_max_health()
 	current_stamina = get_effective_max_stamina()
-	_capture_mouse()
 
 
 func _setup_inputs_if_missing() -> void:
@@ -146,6 +196,8 @@ func _register_key_action(action: String, keycodes: Array[int]) -> void:
 
 func _build_player_components() -> void:
 	# 1. Capsule de collision
+	collision_layer = 1
+	collision_mask = 1
 	var col_shape := CollisionShape3D.new()
 	var capsule := CapsuleShape3D.new()
 	capsule.radius = 0.35
@@ -253,6 +305,8 @@ func set_player_class(c_type: int, save: bool = true) -> void:
 	if save:
 		_save_current_game()
 
+	_capture_mouse()
+
 
 func _apply_class_visuals() -> void:
 	if character_model != null and character_model.has_method("set_tunic_color"):
@@ -261,6 +315,15 @@ func _apply_class_visuals() -> void:
 
 func get_class_name_str() -> String:
 	return PlayerClassData.CLASS_NAMES[player_class]
+
+
+func _input(event: InputEvent) -> void:
+	if event is InputEventMouseMotion:
+		if not _is_any_menu_open() and (is_mouse_captured or Input.get_mouse_mode() == Input.MOUSE_MODE_CAPTURED):
+			is_mouse_captured = true
+			cam_yaw -= event.relative.x * mouse_sensitivity
+			cam_pitch = clampf(cam_pitch - (event.relative.y * mouse_sensitivity), -deg_to_rad(75.0), deg_to_rad(65.0))
+			_update_camera_rotation()
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -283,28 +346,26 @@ func _unhandled_input(event: InputEvent) -> void:
 				_release_mouse()
 			return
 
-	if (inventory_ui != null and inventory_ui.is_open) or (class_select_ui != null and class_select_ui.is_open) or (dialog_ui != null and dialog_ui.is_open) or (world_map_ui != null and world_map_ui.is_open) or (pause_menu_ui != null and pause_menu_ui.is_open):
+	if _is_any_menu_open():
 		return
 
 	if event is InputEventMouseButton:
-		if event.button_index == MOUSE_BUTTON_LEFT:
-			if not is_mouse_captured:
+		if event.pressed:
+			if not is_mouse_captured or Input.get_mouse_mode() != Input.MOUSE_MODE_CAPTURED:
 				_capture_mouse()
-			elif event.pressed:
+			elif event.button_index == MOUSE_BUTTON_LEFT:
 				_use_skill(0) # Attaque de base
-
-		elif event.button_index == MOUSE_BUTTON_RIGHT and event.pressed and is_mouse_captured:
-			_use_skill(1) # Compétence 1
-
-		elif event.button_index == MOUSE_BUTTON_WHEEL_UP and event.pressed:
-			if spring_arm != null:
-				spring_arm.spring_length = clampf(spring_arm.spring_length - zoom_step, min_zoom, max_zoom)
-		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN and event.pressed:
-			if spring_arm != null:
-				spring_arm.spring_length = clampf(spring_arm.spring_length + zoom_step, min_zoom, max_zoom)
+			elif event.button_index == MOUSE_BUTTON_RIGHT:
+				_use_skill(1) # Compétence 1
+			elif event.button_index == MOUSE_BUTTON_WHEEL_UP:
+				if spring_arm != null:
+					spring_arm.spring_length = clampf(spring_arm.spring_length - zoom_step, min_zoom, max_zoom)
+			elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+				if spring_arm != null:
+					spring_arm.spring_length = clampf(spring_arm.spring_length + zoom_step, min_zoom, max_zoom)
 
 	elif event is InputEventKey and event.pressed and not event.echo:
-		if is_mouse_captured:
+		if is_mouse_captured or Input.get_mouse_mode() == Input.MOUSE_MODE_CAPTURED:
 			if event.is_action_pressed("skill_2"):
 				_use_skill(2) # Compétence 2 (E)
 			elif event.is_action_pressed("skill_3"):
@@ -317,11 +378,6 @@ func _unhandled_input(event: InputEvent) -> void:
 			elif event.is_action_pressed("pet_command"):
 				if active_companion != null and is_instance_valid(active_companion):
 					active_companion.toggle_command() # Ordre (G)
-
-	elif event is InputEventMouseMotion and is_mouse_captured:
-		cam_yaw -= event.relative.x * mouse_sensitivity
-		cam_pitch = clampf(cam_pitch - (event.relative.y * mouse_sensitivity), -deg_to_rad(75.0), deg_to_rad(65.0))
-		_update_camera_rotation()
 
 
 func _update_camera_rotation() -> void:
@@ -478,6 +534,41 @@ func _get_closest_enemy(enemies: Array, max_dist: float) -> Node3D:
 
 
 func _physics_process(delta: float) -> void:
+	# 1. Attente active de la présence physique du chunk sous le joueur
+	if not is_terrain_ready:
+		velocity = Vector3.ZERO # Gravité désactivée tant que le terrain n'est pas matérialisé
+		var px: int = int(floor(global_position.x))
+		var pz: int = int(floor(global_position.z))
+		var cx: int = int(floor(float(px) / float(Chunk.CHUNK_WIDTH)))
+		var cz: int = int(floor(float(pz) / float(Chunk.CHUNK_DEPTH)))
+		var chunk: Chunk = _get_chunk_at_coords(Vector2i(cx, cz))
+		if chunk != null and chunk.collision_shape != null and chunk.collision_shape.shape != null:
+			var world = get_node_or_null("../World")
+			var surface_y: int = 38
+			if world != null and world.terrain_noise != null:
+				surface_y = Chunk.get_height_at(world.terrain_noise, px, pz)
+			global_position.y = float(surface_y) + 3.5
+			velocity = Vector3.ZERO
+			is_terrain_ready = true
+		else:
+			return # Attente du thread sans chute ni gravité
+
+	# 2. Détection d'enfermement dans un bloc solide et dégagement vertical
+	var feet_pos := global_position + Vector3(0.0, 0.2, 0.0)
+	var head_pos := global_position + Vector3(0.0, 1.6, 0.0)
+	var feet_block: int = _get_block_type_at(feet_pos)
+	var head_block: int = _get_block_type_at(head_pos)
+	if _is_solid_block(feet_block) or _is_solid_block(head_block):
+		var test_y: float = global_position.y
+		for i in range(30):
+			test_y += 1.0
+			var f_b: int = _get_block_type_at(Vector3(global_position.x, test_y + 0.2, global_position.z))
+			var h_b: int = _get_block_type_at(Vector3(global_position.x, test_y + 1.6, global_position.z))
+			if not _is_solid_block(f_b) and not _is_solid_block(h_b):
+				global_position.y = test_y + 0.5
+				velocity = Vector3.ZERO
+				break
+
 	# Réduction des cooldowns
 	for i in range(4):
 		skill_cooldowns[i] = maxf(skill_cooldowns[i] - delta, 0.0)
@@ -493,34 +584,37 @@ func _physics_process(delta: float) -> void:
 	var water_surface_y: float = float(Chunk.SEA_LEVEL) + 0.5
 	is_swimming = (global_position.y <= water_surface_y)
 
-	if is_swimming or is_on_floor():
+	# 4. Gestion stricte du planeur : actif UNIQUEMENT en l'air ET si Espace est maintenu
+	if is_on_floor() or is_swimming or not Input.is_action_pressed("jump"):
+		is_gliding = false
+	elif not is_on_floor() and not is_swimming and velocity.y < 0.0 and Input.is_action_pressed("jump"):
+		is_gliding = true
+	else:
 		is_gliding = false
 
-	if not is_on_floor() and not is_swimming:
-		if Input.is_action_just_pressed("jump"):
-			is_gliding = not is_gliding
-
+	# 5. Déplacement vertical
 	if is_swimming:
-		if Input.is_action_pressed("jump"):
+		if Input.is_action_pressed("jump") and not _is_any_menu_open():
 			velocity.y = swim_speed
-		elif Input.is_physical_key_pressed(KEY_CTRL) or Input.is_physical_key_pressed(KEY_C):
+		elif (Input.is_physical_key_pressed(KEY_CTRL) or Input.is_physical_key_pressed(KEY_C)) and not _is_any_menu_open():
 			velocity.y = -swim_speed
 		else:
 			velocity.y = lerp(velocity.y, 1.0, delta * 3.0)
-
 	elif is_gliding:
 		velocity.y = lerp(velocity.y, glide_fall_speed, delta * 8.0)
-
 	elif not is_on_floor():
 		velocity.y -= gravity * delta
 
-	if is_on_floor() and Input.is_action_just_pressed("jump"):
+	# Saut depuis le sol
+	if is_on_floor() and Input.is_action_just_pressed("jump") and not _is_any_menu_open():
 		velocity.y = jump_velocity
+		is_gliding = false
 		if sound_generator != null:
 			sound_generator.play_jump()
 
+	# 6. Déplacement horizontal (ZQSD / WASD)
 	var input_dir := Vector2.ZERO
-	if (inventory_ui == null or not inventory_ui.is_open) and (class_select_ui == null or not class_select_ui.is_open):
+	if not _is_any_menu_open():
 		if Input.is_action_pressed("move_forward"):
 			input_dir.y -= 1.0
 		if Input.is_action_pressed("move_back"):
@@ -531,7 +625,7 @@ func _physics_process(delta: float) -> void:
 			input_dir.x += 1.0
 		input_dir = input_dir.normalized()
 
-	var is_sprinting: bool = Input.is_action_pressed("sprint") and is_on_floor() and input_dir != Vector2.ZERO and current_stamina > 2.0
+	var is_sprinting: bool = Input.is_action_pressed("sprint") and is_on_floor() and input_dir != Vector2.ZERO and current_stamina > 2.0 and not _is_any_menu_open()
 
 	var max_sta: float = get_effective_max_stamina()
 	var regen_mult: float = talent_tree.get_stamina_regen_multiplier() if talent_tree != null else 1.0
@@ -544,10 +638,10 @@ func _physics_process(delta: float) -> void:
 	var target_speed: float = walk_speed
 	if is_swimming:
 		target_speed = swim_speed
+	elif is_on_floor():
+		target_speed = sprint_speed if is_sprinting else walk_speed
 	elif is_gliding:
 		target_speed = sprint_speed * 1.15
-	elif is_sprinting:
-		target_speed = sprint_speed
 
 	var cam_forward := -Vector3(sin(cam_yaw), 0, cos(cam_yaw)).normalized()
 	var cam_right := Vector3(cos(cam_yaw), 0, -sin(cam_yaw)).normalized()

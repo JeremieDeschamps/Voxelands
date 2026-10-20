@@ -84,6 +84,8 @@ func close_inventory() -> void:
 	visible = false
 	selected_slot = -1
 	Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
+	if player_ref != null and player_ref.has_method("_capture_mouse"):
+		player_ref._capture_mouse()
 
 	if player_ref != null:
 		var world_seed: int = 1337

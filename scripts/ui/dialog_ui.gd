@@ -187,6 +187,9 @@ func close_dialog() -> void:
 	is_open = false
 	visible = false
 	Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
+	var players: Array[Node] = get_tree().get_nodes_in_group("player")
+	if not players.is_empty() and players[0].has_method("_capture_mouse"):
+		players[0]._capture_mouse()
 	dialog_closed.emit()
 
 

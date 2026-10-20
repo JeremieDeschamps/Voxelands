@@ -162,6 +162,17 @@ func _create_ui_elements() -> void:
 	quest_list_label.add_theme_color_override("font_color", Color(0.85, 0.85, 0.9))
 	quest_container.add_child(quest_list_label)
 
+	# Rendre l'intégralité du HUD non cliquable et transparent aux entrées souris
+	_set_ignore_mouse_recursive(self)
+
+
+func _set_ignore_mouse_recursive(node: Node) -> void:
+	if node is Control:
+		node.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		node.focus_mode = Control.FOCUS_NONE
+	for child in node.get_children():
+		_set_ignore_mouse_recursive(child)
+
 
 func update_companion_hud(pet_node: Node) -> void:
 	if pet_node == null or not is_instance_valid(pet_node):

@@ -70,6 +70,16 @@ func _build_ui() -> void:
 	hp_detail_label.add_theme_color_override("font_color", Color(0.9, 0.9, 0.95))
 	container.add_child(hp_detail_label)
 
+	_set_ignore_mouse_recursive(self)
+
+
+func _set_ignore_mouse_recursive(node: Node) -> void:
+	if node is Control:
+		node.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		node.focus_mode = Control.FOCUS_NONE
+	for child in node.get_children():
+		_set_ignore_mouse_recursive(child)
+
 
 func show_boss(b_name: String, cur_hp: float, m_hp: float) -> void:
 	boss_title_label.text = "👑 " + b_name

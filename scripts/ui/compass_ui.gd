@@ -66,6 +66,16 @@ func _build_ui() -> void:
 	markers_control.size = Vector2(COMPASS_WIDTH, COMPASS_HEIGHT)
 	tape_control.add_child(markers_control)
 
+	_set_ignore_mouse_recursive(self)
+
+
+func _set_ignore_mouse_recursive(node: Node) -> void:
+	if node is Control:
+		node.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		node.focus_mode = Control.FOCUS_NONE
+	for child in node.get_children():
+		_set_ignore_mouse_recursive(child)
+
 
 func update_data(p_pos: Vector3, cam_yaw_rad: float, v_pos: Vector3, v_name: String, d_pos: Vector3, d_name: String, c_pos: Vector3) -> void:
 	player_pos = p_pos
@@ -146,6 +156,8 @@ func _redraw_compass() -> void:
 			c_lbl.position = Vector2(xc - 8.0, 6.0)
 			c_lbl.add_theme_color_override("font_color", Color(0.35, 0.85, 0.95))
 			markers_control.add_child(c_lbl)
+
+	_set_ignore_mouse_recursive(markers_control)
 
 
 func _bearing_deg(from_p: Vector3, to_p: Vector3) -> float:

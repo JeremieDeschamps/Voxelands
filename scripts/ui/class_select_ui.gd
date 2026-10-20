@@ -11,6 +11,7 @@ var is_open: bool = false
 
 
 func _ready() -> void:
+	process_mode = Node.PROCESS_MODE_ALWAYS
 	visible = false
 	_build_ui()
 
@@ -25,6 +26,9 @@ func close_selection() -> void:
 	is_open = false
 	visible = false
 	Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
+	var player = get_parent()
+	if player != null and player.has_method("_capture_mouse"):
+		player._capture_mouse()
 
 
 func _build_ui() -> void:

@@ -176,6 +176,8 @@ func close_map() -> void:
 	is_open = false
 	visible = false
 	Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
+	if player_ref != null and player_ref.has_method("_capture_mouse"):
+		player_ref._capture_mouse()
 
 
 func _process(_delta: float) -> void:
