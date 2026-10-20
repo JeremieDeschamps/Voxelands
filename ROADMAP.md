@@ -87,6 +87,23 @@
     - Invincibilité temporaire (i-frames) avec clignotement du joueur et flash rouge à l'écran lors d'un coup reçu.
   - Validation headless réussie.
 
+- [x] **Étape 5.5 : Classes de Héros, Compétences & Arbre de Talents**
+  - **4 Classes au choix** au lancement ([`player_class_data.gd`](file:///Z:/scripts/player/player_class_data.gd)) avec tunique et capacités uniques :
+    - **Guerrier** (rouge cramoisi) : Coup d'Épée, Tourbillon d'Acier, Cri de Guerre (+dégâts/résistance), Heurt Sismique.
+    - **Mage** (violet améthyste) : Projectile Arcanique, Boule de Feu Explosive, Nova de Givre (gel de zone), Éruption de Mana.
+    - **Rôdeur** (vert émeraude) : Flèche Voxel, Tir Perforant longue portée, Piège Voxel, Pluie de Flèches.
+    - **Voleur** (orbe d'ombre / noir) : Coup de Dague critique, Danse des Lames, Pas de l'Ombre (téléportation derrière la cible), Bombe Fumigène étourdissante.
+  - **Écran de sélection de classe initial** ([`class_select_ui.gd`](file:///Z:/scripts/ui/class_select_ui.gd)) affiché lors d'une nouvelle partie avec description détaillée de chaque archétype et prévisualisation des compétences.
+  - **Barre d'action / de compétences en bas de l'écran** ([`skill_bar_ui.gd`](file:///Z:/scripts/ui/skill_bar_ui.gd)) :
+    - 4 emplacements de compétences mappés sur `[Clic Gauche]`, `[Clic Droit]`, `[E]` et `[R]`.
+    - Indicateur de coût en endurance et sweep d'animation semi-transparente avec décompte des secondes de cooldown en temps réel.
+  - **Arbre de Talents RPG** ([`talent_tree.gd`](file:///Z:/scripts/player/talent_tree.gd)) :
+    - 1 point de talent gagné à chaque passage de niveau.
+    - 5 branches de progression (Force Brute, Vitalité Primale, Vigueur & Récupération, Frappes Fatales / Critique, Maîtrise des Sorts / Réduction Cooldowns) avec jusqu'à 5 rangs chacune.
+    - Onglet dédié dans l'interface d'inventaire (`I`) pour dépenser et réinitialiser les talents en direct.
+  - **Sauvegarde et persistance JSON** : classe active, rangs de talents et points disponibles persistés dans `user://save.json`.
+  - Validation headless réussie.
+
 - [ ] **Étape 6 : Générateur Audio Procédural**
   - Synthèse sonore en temps réel via `AudioStreamGenerator` (bruits de pas, casse de bloc, coup, musique d'ambiance 8/16-bit synthétisée).
 

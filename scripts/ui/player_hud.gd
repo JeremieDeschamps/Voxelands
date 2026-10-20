@@ -3,10 +3,13 @@ extends CanvasLayer
 
 ## Interface tête haute (HUD) avec barres de vie, d'endurance, réticule et compteur FPS.
 
+const SkillBarUI = preload("res://scripts/ui/skill_bar_ui.gd")
+
 var health_bar: ProgressBar = null
 var stamina_bar: ProgressBar = null
 var fps_label: Label = null
 var hurt_flash: ColorRect = null
+var skill_bar: SkillBarUI = null
 var flash_timer: float = 0.0
 
 
@@ -58,6 +61,21 @@ func _create_ui_elements() -> void:
 	hurt_flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hurt_flash.color = Color(0.9, 0.1, 0.1, 0.0)
 	add_child(hurt_flash)
+
+	# 5. Barre de compétences au centre en bas
+	skill_bar = SkillBarUI.new()
+	skill_bar.name = "SkillBarUI"
+	add_child(skill_bar)
+
+
+func setup_skill_bar(c_type: int) -> void:
+	if skill_bar != null:
+		skill_bar.setup_skills(c_type)
+
+
+func update_skill_cooldowns(cds: Array[float], max_cds: Array[float]) -> void:
+	if skill_bar != null:
+		skill_bar.update_cooldowns(cds, max_cds)
 
 
 func _create_styled_bar(fill_color: Color, bg_color: Color, _label_name: String) -> ProgressBar:

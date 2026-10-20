@@ -6,7 +6,7 @@ extends RefCounted
 const SAVE_PATH: String = "user://save.json"
 
 
-## Sauvegarde l'état du joueur, son niveau, son inventaire et sa position
+## Sauvegarde l'état du joueur, son niveau, sa classe, son arbre de talents et son inventaire
 static func save_game(player: CharacterBody3D, world_seed: int) -> bool:
 	if player == null or not is_instance_valid(player):
 		return false
@@ -14,11 +14,20 @@ static func save_game(player: CharacterBody3D, world_seed: int) -> bool:
 	var inv = player.get_node_or_null("InventoryManager")
 	var inv_data: Dictionary = inv.to_dict() if inv != null else {}
 
+	var talents_data: Dictionary = {}
+	if ("talent_tree" in player) and player.talent_tree != null:
+		talents_data = player.talent_tree.to_dict()
+
+	var p_class: int = 0
+	if "player_class" in player:
+		p_class = player.player_class
+
 	var save_data := {
-		"version": 1,
+		"version": 2,
 		"timestamp": Time.get_datetime_string_from_system(),
 		"world_seed": world_seed,
 		"player": {
+			"class": p_class,
 			"level": player.level,
 			"current_xp": player.current_xp,
 			"xp_to_next": player.xp_to_next_level,
@@ -26,6 +35,7 @@ static func save_game(player: CharacterBody3D, world_seed: int) -> bool:
 			"current_stamina": player.current_stamina,
 			"position": [player.global_position.x, player.global_position.y, player.global_position.z],
 		},
+		"talents": talents_data,
 		"inventory": inv_data
 	}
 
@@ -62,6 +72,9 @@ static func load_game(player: CharacterBody3D) -> Dictionary:
 	var data: Dictionary = test_json.data
 	if player != null and is_instance_valid(player):
 		var p_data: Dictionary = data.get("player", {})
+		if "class" in p_data and player.has_method("set_player_class"):
+			player.set_player_class(int(p_data["class"]), false)
+
 		player.level = int(p_data.get("level", 1))
 		player.current_xp = int(p_data.get("current_xp", 0))
 		player.xp_to_next_level = int(p_data.get("xp_to_next", 100))
@@ -72,9 +85,12 @@ static func load_game(player: CharacterBody3D) -> Dictionary:
 		if pos_arr.size() >= 3:
 			player.global_position = Vector3(float(pos_arr[0]), float(pos_arr[1]), float(pos_arr[2]))
 
+		if ("talent_tree" in player) and player.talent_tree != null and "talents" in data:
+			player.talent_tree.from_dict(data["talents"])
+
 		var inv = player.get_node_or_null("InventoryManager")
-		if inv != null:
-			inv.from_dict(data.get("inventory", {}))
+		if inv != null and "inventory" in data:
+			inv.from_dict(data["inventory"])
 
 	print("Sauvegarde chargée avec succès depuis : ", SAVE_PATH)
 	return data

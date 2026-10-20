@@ -1,7 +1,7 @@
 class_name InventoryUI
 extends CanvasLayer
 
-## Interface complète de l'inventaire (Touche I) : grille, équipement, comparaison et statistiques.
+## Interface complète : Inventaire (Touche I), Équipement, Comparaison d'objets et Arbre de Talents.
 
 const ItemData = preload("res://scripts/items/item_data.gd")
 const InventoryManager = preload("res://scripts/items/inventory_manager.gd")
@@ -11,27 +11,33 @@ var player_ref: CharacterBody3D = null
 var inv_manager: InventoryManager = null
 
 var is_open: bool = false
+var current_tab: int = 0 # 0: Inventaire, 1: Talents
 var selected_slot: int = -1
 
-# Éléments graphiques
+# Éléments graphiques généraux
 var main_panel: Panel = null
+var tab_inv_btn: Button = null
+var tab_talents_btn: Button = null
+
+# Conteneur Inventaire
+var inv_content: Control = null
 var grid_container: GridContainer = null
 var slot_buttons: Array[Button] = []
-
 var equip_weapon_btn: Button = null
 var equip_armor_btn: Button = null
 var equip_ring_btn: Button = null
-
-# Panneau de détails & comparaison
 var detail_name_label: Label = null
 var detail_type_label: Label = null
 var detail_stats_label: Label = null
 var detail_compare_label: Label = null
 var action_equip_btn: Button = null
 var action_drop_btn: Button = null
-
-# Panneau des stats du joueur
 var player_stats_label: Label = null
+
+# Conteneur Arbre de Talents
+var talents_content: Control = null
+var talent_points_label: Label = null
+var talent_rows: Array[Dictionary] = []
 
 
 func _ready() -> void:
@@ -45,6 +51,9 @@ func setup(player: CharacterBody3D, inv: InventoryManager) -> void:
 
 	inv_manager.inventory_changed.connect(_refresh_ui)
 	inv_manager.equipment_changed.connect(_refresh_ui)
+
+	if player_ref != null and ("talent_tree" in player_ref) and player_ref.talent_tree != null:
+		player_ref.talent_tree.talents_updated.connect(_refresh_ui)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -66,6 +75,7 @@ func open_inventory() -> void:
 	is_open = true
 	visible = true
 	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
+	_switch_tab(0)
 	_refresh_ui()
 
 
@@ -75,7 +85,6 @@ func close_inventory() -> void:
 	selected_slot = -1
 	Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 
-	# Sauvegarde automatique à la fermeture de l'inventaire
 	if player_ref != null:
 		var world_seed: int = 1337
 		var world = player_ref.get_node_or_null("../World")
@@ -85,13 +94,11 @@ func close_inventory() -> void:
 
 
 func _build_ui() -> void:
-	# Fond obscurci
 	var overlay := ColorRect.new()
 	overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
 	overlay.color = Color(0.05, 0.05, 0.08, 0.65)
 	add_child(overlay)
 
-	# Fenêtre principale centrée (880 x 520)
 	main_panel = Panel.new()
 	main_panel.set_anchors_preset(Control.PRESET_CENTER)
 	main_panel.custom_minimum_size = Vector2(880.0, 520.0)
@@ -111,13 +118,20 @@ func _build_ui() -> void:
 	main_panel.add_theme_stylebox_override("panel", sb_main)
 	add_child(main_panel)
 
-	# Barre de titre
-	var title_lbl := Label.new()
-	title_lbl.text = "INVENTAIRE & ÉQUIPEMENT"
-	title_lbl.position = Vector2(24.0, 16.0)
-	title_lbl.add_theme_font_size_override("font_size", 20)
-	title_lbl.add_theme_color_override("font_color", Color(0.95, 0.95, 1.0))
-	main_panel.add_child(title_lbl)
+	# Boutons d'onglets (INVENTAIRE / TALENTS)
+	tab_inv_btn = Button.new()
+	tab_inv_btn.text = "🎒 INVENTAIRE & ÉQUIPEMENT"
+	tab_inv_btn.position = Vector2(24.0, 14.0)
+	tab_inv_btn.custom_minimum_size = Vector2(220.0, 32.0)
+	tab_inv_btn.pressed.connect(func(): _switch_tab(0))
+	main_panel.add_child(tab_inv_btn)
+
+	tab_talents_btn = Button.new()
+	tab_talents_btn.text = "⭐ ARBRE DE TALENTS"
+	tab_talents_btn.position = Vector2(260.0, 14.0)
+	tab_talents_btn.custom_minimum_size = Vector2(200.0, 32.0)
+	tab_talents_btn.pressed.connect(func(): _switch_tab(1))
+	main_panel.add_child(tab_talents_btn)
 
 	var close_btn := Button.new()
 	close_btn.text = "✕"
@@ -126,12 +140,17 @@ func _build_ui() -> void:
 	close_btn.pressed.connect(close_inventory)
 	main_panel.add_child(close_btn)
 
-	# 1. PANNEAU GAUCHE : ÉQUIPEMENT (Arme, Armure, Anneau)
+	# ===================== ONGLET 1 : INVENTAIRE =====================
+	inv_content = Control.new()
+	inv_content.position = Vector2(0.0, 50.0)
+	main_panel.add_child(inv_content)
+
+	# Panneau gauche : Équipement
 	var equip_box := VBoxContainer.new()
-	equip_box.position = Vector2(24.0, 60.0)
+	equip_box.position = Vector2(24.0, 10.0)
 	equip_box.custom_minimum_size = Vector2(200.0, 320.0)
 	equip_box.add_theme_constant_override("separation", 16)
-	main_panel.add_child(equip_box)
+	inv_content.add_child(equip_box)
 
 	var equip_title := Label.new()
 	equip_title.text = "ÉQUIPEMENT ACTIF"
@@ -150,11 +169,11 @@ func _build_ui() -> void:
 	equip_ring_btn.pressed.connect(func(): _on_equip_slot_clicked(ItemData.ItemType.RING))
 	equip_box.add_child(equip_ring_btn)
 
-	# 2. PANNEAU CENTRE : GRILLE 4 x 5 (20 cases)
+	# Panneau centre : Grille 4x5
 	var grid_box := VBoxContainer.new()
-	grid_box.position = Vector2(248.0, 60.0)
+	grid_box.position = Vector2(248.0, 10.0)
 	grid_box.custom_minimum_size = Vector2(320.0, 320.0)
-	main_panel.add_child(grid_box)
+	inv_content.add_child(grid_box)
 
 	var grid_title := Label.new()
 	grid_title.text = "SAC À DOS (20 emplacements)"
@@ -171,18 +190,17 @@ func _build_ui() -> void:
 	for i in range(20):
 		var btn := Button.new()
 		btn.custom_minimum_size = Vector2(58.0, 58.0)
-		btn.text = ""
 		var slot_idx: int = i
 		btn.pressed.connect(func(): _on_slot_clicked(slot_idx))
 		grid_container.add_child(btn)
 		slot_buttons.append(btn)
 
-	# 3. PANNEAU DROIT : DÉTAILS & COMPARAISON
+	# Panneau droit : Détails & Comparaison
 	var detail_box := VBoxContainer.new()
-	detail_box.position = Vector2(588.0, 60.0)
+	detail_box.position = Vector2(588.0, 10.0)
 	detail_box.custom_minimum_size = Vector2(268.0, 320.0)
-	detail_box.add_theme_constant_override("separation", 10)
-	main_panel.add_child(detail_box)
+	detail_box.add_theme_constant_override("separation", 8)
+	inv_content.add_child(detail_box)
 
 	detail_name_label = Label.new()
 	detail_name_label.text = "Sélectionnez un objet"
@@ -220,12 +238,108 @@ func _build_ui() -> void:
 	action_drop_btn.pressed.connect(_on_drop_action_pressed)
 	action_box.add_child(action_drop_btn)
 
-	# 4. PANNEAU DU BAS : STATS DU JOUEUR (Niveau, XP, Attaque, Défense)
 	player_stats_label = Label.new()
-	player_stats_label.position = Vector2(24.0, 440.0)
+	player_stats_label.position = Vector2(24.0, 390.0)
 	player_stats_label.custom_minimum_size = Vector2(832.0, 60.0)
 	player_stats_label.add_theme_color_override("font_color", Color(0.85, 0.9, 0.95))
-	main_panel.add_child(player_stats_label)
+	inv_content.add_child(player_stats_label)
+
+	# ===================== ONGLET 2 : ARBRE DE TALENTS =====================
+	talents_content = Control.new()
+	talents_content.position = Vector2(0.0, 50.0)
+	talents_content.visible = false
+	main_panel.add_child(talents_content)
+
+	var t_box := VBoxContainer.new()
+	t_box.position = Vector2(24.0, 10.0)
+	t_box.custom_minimum_size = Vector2(832.0, 440.0)
+	t_box.add_theme_constant_override("separation", 14)
+	talents_content.add_child(t_box)
+
+	talent_points_label = Label.new()
+	talent_points_label.text = "POINTS DISPONIBLES : 0"
+	talent_points_label.add_theme_font_size_override("font_size", 18)
+	talent_points_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.25))
+	t_box.add_child(talent_points_label)
+
+	talent_rows.clear()
+	var talent_names: Array[String] = [
+		"Puissance Martiale / Arcanique",
+		"Vitalité Renforcée",
+		"Vigueur & Récupération",
+		"Frappe Critique",
+		"Hâte & Maîtrise des Sorts"
+	]
+	var talent_descs: Array[String] = [
+		"+8% de dégâts sur toutes les attaques par rang.",
+		"+15 points de vie max par rang.",
+		"+10 endurance max et +12% de régénération par rang.",
+		"+6% de chance de coup critique (x1.8 dégâts) par rang.",
+		"+7% de réduction du temps de recharge des compétences par rang."
+	]
+
+	for i in range(5):
+		var row := HBoxContainer.new()
+		row.custom_minimum_size = Vector2(832.0, 50.0)
+		row.add_theme_constant_override("separation", 16)
+
+		var info_box := VBoxContainer.new()
+		info_box.custom_minimum_size = Vector2(620.0, 46.0)
+
+		var t_title := Label.new()
+		t_title.text = talent_names[i]
+		t_title.add_theme_font_size_override("font_size", 15)
+		t_title.add_theme_color_override("font_color", Color(0.9, 0.9, 0.95))
+		info_box.add_child(t_title)
+
+		var t_desc := Label.new()
+		t_desc.text = talent_descs[i]
+		t_desc.add_theme_font_size_override("font_size", 12)
+		t_desc.add_theme_color_override("font_color", Color(0.7, 0.7, 0.75))
+		info_box.add_child(t_desc)
+		row.add_child(info_box)
+
+		var rank_lbl := Label.new()
+		rank_lbl.text = "Rang : 0 / 5"
+		rank_lbl.custom_minimum_size = Vector2(90.0, 46.0)
+		rank_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		rank_lbl.add_theme_font_size_override("font_size", 14)
+		rank_lbl.add_theme_color_override("font_color", Color(0.4, 0.8, 1.0))
+		row.add_child(rank_lbl)
+
+		var up_btn := Button.new()
+		up_btn.text = "+ 1 Rang"
+		up_btn.custom_minimum_size = Vector2(80.0, 36.0)
+		var t_idx: int = i
+		up_btn.pressed.connect(func(): _on_upgrade_talent_pressed(t_idx))
+		row.add_child(up_btn)
+
+		t_box.add_child(row)
+		talent_rows.append({
+			"rank_label": rank_lbl,
+			"button": up_btn
+		})
+
+	var reset_btn := Button.new()
+	reset_btn.text = "Réinitialiser les talents"
+	reset_btn.custom_minimum_size = Vector2(180.0, 36.0)
+	reset_btn.pressed.connect(_on_reset_talents_pressed)
+	t_box.add_child(reset_btn)
+
+
+func _switch_tab(tab: int) -> void:
+	current_tab = tab
+	if current_tab == 0:
+		inv_content.visible = true
+		talents_content.visible = false
+		tab_inv_btn.add_theme_color_override("font_color", Color(1.0, 0.85, 0.2))
+		tab_talents_btn.remove_theme_color_override("font_color")
+	else:
+		inv_content.visible = false
+		talents_content.visible = true
+		tab_talents_btn.add_theme_color_override("font_color", Color(1.0, 0.85, 0.2))
+		tab_inv_btn.remove_theme_color_override("font_color")
+	_refresh_ui()
 
 
 func _create_equip_slot(title: String) -> Button:
@@ -237,15 +351,23 @@ func _create_equip_slot(title: String) -> Button:
 
 
 func _refresh_ui() -> void:
-	if not is_open or inv_manager == null:
+	if not is_open:
 		return
 
-	# 1. Mise à jour des slots d'équipement
+	if current_tab == 0:
+		_refresh_inventory_tab()
+	else:
+		_refresh_talents_tab()
+
+
+func _refresh_inventory_tab() -> void:
+	if inv_manager == null:
+		return
+
 	_update_equip_slot_button(equip_weapon_btn, "⚔ Arme", inv_manager.equipped_weapon)
 	_update_equip_slot_button(equip_armor_btn, "🛡 Armure", inv_manager.equipped_armor)
 	_update_equip_slot_button(equip_ring_btn, "💍 Anneau", inv_manager.equipped_ring)
 
-	# 2. Mise à jour de la grille
 	for i in range(20):
 		var btn: Button = slot_buttons[i]
 		var it: ItemData = inv_manager.items[i]
@@ -257,11 +379,34 @@ func _refresh_ui() -> void:
 			btn.text = ""
 			btn.remove_theme_color_override("font_color")
 
-	# 3. Mise à jour du panneau de détails
 	_update_details_panel()
-
-	# 4. Mise à jour des statistiques joueur
 	_update_player_stats()
+
+
+func _refresh_talents_tab() -> void:
+	if player_ref == null or not ("talent_tree" in player_ref) or player_ref.talent_tree == null:
+		return
+
+	var tt = player_ref.talent_tree
+	talent_points_label.text = "POINTS DISPONIBLES : %d  (Gagnez 1 point à chaque niveau)" % tt.available_points
+
+	for i in range(talent_rows.size()):
+		var r_dict: Dictionary = talent_rows[i]
+		var rank: int = tt.ranks[i]
+		r_dict["rank_label"].text = "Rang : %d / 5" % rank
+		r_dict["button"].disabled = not tt.can_upgrade(i)
+
+
+func _on_upgrade_talent_pressed(index: int) -> void:
+	if player_ref != null and ("talent_tree" in player_ref) and player_ref.talent_tree != null:
+		player_ref.talent_tree.upgrade_talent(index)
+		_refresh_talents_tab()
+
+
+func _on_reset_talents_pressed() -> void:
+	if player_ref != null and ("talent_tree" in player_ref) and player_ref.talent_tree != null:
+		player_ref.talent_tree.reset_talents()
+		_refresh_talents_tab()
 
 
 func _update_equip_slot_button(btn: Button, slot_title: String, item: ItemData) -> void:
@@ -312,7 +457,6 @@ func _update_details_panel() -> void:
 	action_equip_btn.disabled = false
 	action_drop_btn.disabled = false
 
-	# Nom & Rareté
 	var r_name: String = ItemData.get_rarity_name(item.rarity)
 	detail_name_label.text = item.name
 	detail_name_label.add_theme_color_override("font_color", ItemData.get_rarity_color(item.rarity))
@@ -320,7 +464,6 @@ func _update_details_panel() -> void:
 	var t_name: String = "Arme" if item.item_type == ItemData.ItemType.WEAPON else ("Armure" if item.item_type == ItemData.ItemType.ARMOR else "Anneau")
 	detail_type_label.text = "Type : %s | Rareté : %s | Niv. Requis : %d" % [t_name, r_name, item.level_req]
 
-	# Statistiques
 	var stat_lines: Array[String] = []
 	if item.attack_bonus > 0.0:
 		stat_lines.append("• Attaque : +%.0f" % item.attack_bonus)
@@ -332,11 +475,10 @@ func _update_details_panel() -> void:
 		stat_lines.append("• Endurance : +%.0f" % item.stamina_bonus)
 	detail_stats_label.text = "\n".join(stat_lines)
 
-	# Comparaison avec l'équipement actuel
 	var current: ItemData = inv_manager.get_equipped_for_type(item.item_type)
-	var comp_lines: Array[String] = ["[COMPARAISON AVEC ÉQUIPEMENT ACTUEL]"]
+	var comp_lines: Array[String] = ["[COMPARAISON]"]
 	if current != null:
-		comp_lines.append("Remplacement de : %s" % current.name)
+		comp_lines.append("Actuel : %s" % current.name)
 		var diff_atk: float = item.attack_bonus - current.attack_bonus
 		var diff_def: float = item.defense_bonus - current.defense_bonus
 		var diff_hp: float = item.health_bonus - current.health_bonus
@@ -351,7 +493,7 @@ func _update_details_panel() -> void:
 		if diff_sta != 0.0:
 			comp_lines.append("Endurance : %s%.0f" % ["+" if diff_sta > 0.0 else "", diff_sta])
 	else:
-		comp_lines.append("(Aucun équipement actuellement dans cet emplacement)")
+		comp_lines.append("(Aucun équipement actuel)")
 
 	detail_compare_label.text = "\n".join(comp_lines)
 
@@ -365,16 +507,18 @@ func _update_player_stats() -> void:
 	var hp_bonus: float = inv_manager.get_total_health_bonus()
 	var sta_bonus: float = inv_manager.get_total_stamina_bonus()
 
-	var total_atk: float = 22.0 + atk_bonus
-	var total_hp: float = player_ref.max_health + hp_bonus
-	var total_sta: float = player_ref.max_stamina + sta_bonus
+	var talent_mult: float = player_ref.talent_tree.get_damage_multiplier() if ("talent_tree" in player_ref and player_ref.talent_tree != null) else 1.0
 
-	player_stats_label.text = "HÉROS - Niveau : %d | XP : %d / %d\nAttaque Totale : %.0f (+%.0f) | Défense : %.0f | PV Max : %.0f | Endurance : %.0f\n(Touche 'I' pour fermer, sauvegarde auto)" % [
+	var total_atk: float = (22.0 + atk_bonus) * talent_mult
+	var total_hp: float = player_ref.get_effective_max_health()
+	var total_sta: float = player_ref.get_effective_max_stamina()
+
+	player_stats_label.text = "HÉROS (%s) - Niveau : %d | XP : %d / %d\nAttaque : %.0f | Défense : %.0f | PV Max : %.0f | Endurance : %.0f\n(Touche 'I' pour fermer, sauvegarde automatique)" % [
+		player_ref.get_class_name_str(),
 		player_ref.level,
 		player_ref.current_xp,
 		player_ref.xp_to_next_level,
 		total_atk,
-		atk_bonus,
 		def_bonus,
 		total_hp,
 		total_sta

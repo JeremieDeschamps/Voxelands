@@ -56,7 +56,6 @@ func _build_character_mesh() -> void:
 	torso.name = "Torso"
 	torso.position = Vector3(0.0, 0.75, 0.0)
 	visuals_node.add_child(torso)
-
 	# 2. Tête articulée
 	head = Node3D.new()
 	head.name = "Head"
@@ -228,3 +227,11 @@ func update_animation(horizontal_speed: float, delta: float, is_on_floor: bool, 
 		torso.position.y = lerp(torso.position.y, 0.75, delta * 10.0)
 		head.position.y = lerp(head.position.y, 1.25, delta * 10.0)
 		visuals_node.rotation.x = lerp_angle(visuals_node.rotation.x, 0.0, delta * 15.0)
+
+
+## Modifie la couleur de la tunique selon la classe du joueur
+func set_tunic_color(col: Color) -> void:
+	if torso != null and torso.mesh != null and torso.mesh.material != null:
+		var mat: StandardMaterial3D = torso.mesh.material
+		mat.albedo_color = col
+

@@ -1,7 +1,7 @@
 class_name Player
 extends CharacterBody3D
 
-## Contrôleur de joueur voxel complet : combat, inventaire (touche I), progression XP/Niveaux, i-frames et sauvegarde.
+## Contrôleur de joueur voxel : 4 classes (Guerrier, Mage, Rôdeur, Voleur), 4 compétences, arbre de talents, inventaire et sauvegarde.
 
 const VoxelCharacter = preload("res://scripts/player/voxel_character.gd")
 const Chunk = preload("res://scripts/world/chunk.gd")
@@ -11,6 +11,9 @@ const DamageLabel3D = preload("res://scripts/ui/damage_label_3d.gd")
 const InventoryManager = preload("res://scripts/items/inventory_manager.gd")
 const InventoryUI = preload("res://scripts/ui/inventory_ui.gd")
 const SaveSystem = preload("res://scripts/player/save_system.gd")
+const PlayerClassData = preload("res://scripts/player/player_class_data.gd")
+const TalentTree = preload("res://scripts/player/talent_tree.gd")
+const ClassSelectUI = preload("res://scripts/ui/class_select_ui.gd")
 
 # Caractéristiques physiques
 @export var walk_speed: float = 6.0
@@ -25,12 +28,17 @@ const SaveSystem = preload("res://scripts/player/save_system.gd")
 @export var max_stamina: float = 100.0
 @export var stamina_regen: float = 18.0
 @export var sprint_stamina_cost: float = 16.0
-@export var skill_stamina_cost: float = 30.0
 
-# Progression XP & Niveaux
+# Classe & Compétences
+var player_class: int = PlayerClassData.ClassType.WARRIOR
+var skill_cooldowns: Array[float] = [0.0, 0.0, 0.0, 0.0]
+var skill_max_cooldowns: Array[float] = [0.35, 3.0, 5.0, 10.0]
+
+# Progression XP & Arbre de Talents
 var level: int = 1
 var current_xp: int = 0
 var xp_to_next_level: int = 100
+var talent_tree: TalentTree = null
 
 @export var min_zoom: float = 1.8
 @export var max_zoom: float = 9.0
@@ -47,6 +55,7 @@ var camera: Camera3D = null
 var hud: PlayerHUD = null
 var inventory: InventoryManager = null
 var inventory_ui: InventoryUI = null
+var class_select_ui: ClassSelectUI = null
 
 # États du joueur
 var is_gliding: bool = false
@@ -57,10 +66,6 @@ var is_mouse_captured: bool = false
 var invincibility_timer: float = 0.0
 var invincibility_duration: float = 0.55
 
-# Cooldowns d'attaque
-var basic_attack_cooldown: float = 0.0
-var skill_attack_cooldown: float = 0.0
-
 # Orientation de la caméra
 var cam_yaw: float = 0.0
 var cam_pitch: float = -0.2
@@ -70,13 +75,20 @@ var gravity: float = 19.6
 
 func _ready() -> void:
 	add_to_group("player")
+	talent_tree = TalentTree.new()
 
 	_setup_inputs_if_missing()
 	_build_player_components()
 	_capture_mouse()
 
-	# Chargement automatique de la sauvegarde si elle existe
-	SaveSystem.load_game(self)
+	# Chargement de la sauvegarde si elle existe
+	var saved_data: Dictionary = SaveSystem.load_game(self)
+
+	# Si aucune sauvegarde existante, afficher le choix de classe au démarrage
+	if saved_data.is_empty():
+		class_select_ui.open_selection()
+	else:
+		_apply_class_visuals()
 
 	current_health = get_effective_max_health()
 	current_stamina = get_effective_max_stamina()
@@ -89,6 +101,8 @@ func _setup_inputs_if_missing() -> void:
 	_register_key_action("move_right", [KEY_D, KEY_RIGHT])
 	_register_key_action("jump", [KEY_SPACE])
 	_register_key_action("sprint", [KEY_SHIFT])
+	_register_key_action("skill_2", [KEY_E])
+	_register_key_action("skill_3", [KEY_R])
 
 
 func _register_key_action(action: String, keycodes: Array[int]) -> void:
@@ -136,6 +150,7 @@ func _build_player_components() -> void:
 	hud = PlayerHUD.new()
 	hud.name = "PlayerHUD"
 	add_child(hud)
+	hud.setup_skill_bar(player_class)
 
 	# 5. Inventaire & Interface
 	inventory = InventoryManager.new()
@@ -147,10 +162,41 @@ func _build_player_components() -> void:
 	add_child(inventory_ui)
 	inventory_ui.setup(self, inventory)
 
+	# 6. Écran de sélection de classe
+	class_select_ui = ClassSelectUI.new()
+	class_select_ui.name = "ClassSelectUI"
+	add_child(class_select_ui)
+	class_select_ui.class_selected.connect(set_player_class)
+
+
+func set_player_class(c_type: int, save: bool = true) -> void:
+	player_class = c_type
+	var skills: Array[Dictionary] = PlayerClassData.get_skills_for_class(player_class)
+	for i in range(4):
+		if i < skills.size():
+			skill_max_cooldowns[i] = skills[i]["cooldown"]
+			skill_cooldowns[i] = 0.0
+
+	_apply_class_visuals()
+
+	if hud != null:
+		hud.setup_skill_bar(player_class)
+
+	if save:
+		_save_current_game()
+
+
+func _apply_class_visuals() -> void:
+	if character_model != null and character_model.has_method("set_tunic_color"):
+		character_model.set_tunic_color(PlayerClassData.CLASS_TUNIC_COLORS[player_class])
+
+
+func get_class_name_str() -> String:
+	return PlayerClassData.CLASS_NAMES[player_class]
+
 
 func _unhandled_input(event: InputEvent) -> void:
-	# Si l'inventaire est ouvert, on ignore les inputs de combat/caméra
-	if inventory_ui != null and inventory_ui.is_open:
+	if (inventory_ui != null and inventory_ui.is_open) or (class_select_ui != null and class_select_ui.is_open):
 		return
 
 	if event is InputEventMouseButton:
@@ -158,10 +204,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			if not is_mouse_captured:
 				_capture_mouse()
 			elif event.pressed:
-				_perform_basic_attack()
+				_use_skill(0) # Attaque de base
 
 		elif event.button_index == MOUSE_BUTTON_RIGHT and event.pressed and is_mouse_captured:
-			_perform_skill_attack()
+			_use_skill(1) # Compétence 1
 
 		elif event.button_index == MOUSE_BUTTON_WHEEL_UP and event.pressed:
 			if spring_arm != null:
@@ -170,9 +216,14 @@ func _unhandled_input(event: InputEvent) -> void:
 			if spring_arm != null:
 				spring_arm.spring_length = clampf(spring_arm.spring_length + zoom_step, min_zoom, max_zoom)
 
-	elif event is InputEventKey:
-		if event.pressed and event.keycode == KEY_ESCAPE:
+	elif event is InputEventKey and event.pressed and not event.echo:
+		if event.keycode == KEY_ESCAPE:
 			_release_mouse()
+		elif is_mouse_captured:
+			if event.is_action_pressed("skill_2"):
+				_use_skill(2) # Compétence 2 (E)
+			elif event.is_action_pressed("skill_3"):
+				_use_skill(3) # Compétence 3 (R)
 
 	elif event is InputEventMouseMotion and is_mouse_captured:
 		cam_yaw -= event.relative.x * mouse_sensitivity
@@ -186,62 +237,153 @@ func _update_camera_rotation() -> void:
 		spring_arm.rotation.x = cam_pitch
 
 
-## Clic Gauche : Attaque de base avec bonus d'arme
-func _perform_basic_attack() -> void:
-	if basic_attack_cooldown > 0.0:
+## Exécute l'une des 4 compétences de la classe
+func _use_skill(idx: int) -> void:
+	if idx < 0 or idx >= 4:
 		return
 
-	basic_attack_cooldown = 0.35
+	if skill_cooldowns[idx] > 0.0:
+		return
 
+	var skills: Array[Dictionary] = PlayerClassData.get_skills_for_class(player_class)
+	if idx >= skills.size():
+		return
+
+	var s_info: Dictionary = skills[idx]
+	var sta_cost: float = s_info["stamina"]
+
+	if current_stamina < sta_cost:
+		return
+
+	current_stamina -= sta_cost
+
+	# Calcul du temps de recharge atténué par les talents
+	var cd_mult: float = talent_tree.get_cooldown_multiplier() if talent_tree != null else 1.0
+	skill_cooldowns[idx] = s_info["cooldown"] * cd_mult
+	skill_max_cooldowns[idx] = s_info["cooldown"] * cd_mult
+
+	# Animation du bras droit
 	if character_model != null and character_model.right_arm_pivot != null:
-		character_model.right_arm_pivot.rotation.x = -deg_to_rad(85.0)
+		character_model.right_arm_pivot.rotation.x = -deg_to_rad(90.0)
 
+	# Calcul des dégâts et du critique
 	var bonus_atk: float = inventory.get_total_attack_bonus() if inventory != null else 0.0
-	var final_damage: float = 22.0 + bonus_atk
+	var talent_dmg_mult: float = talent_tree.get_damage_multiplier() if talent_tree != null else 1.0
+	var is_crit: bool = (randf() < (talent_tree.get_crit_chance() if talent_tree != null else 0.0))
+	var crit_mult: float = 1.8 if is_crit else 1.0
 
+	var base_dmg: float = s_info["damage"] + bonus_atk
+	var final_damage: float = base_dmg * talent_dmg_mult * crit_mult
+
+	var s_range: float = s_info["range"]
 	var cam_forward := -Vector3(sin(cam_yaw), 0, cos(cam_yaw)).normalized()
-	var attack_range: float = 2.6
+
+	# Effets spécifiques par classe et compétence
+	_execute_skill_effects(idx, final_damage, s_range, cam_forward, is_crit)
+
+
+func _execute_skill_effects(idx: int, dmg: float, reach: float, forward_dir: Vector3, is_crit: bool) -> void:
 	var enemies := get_tree().get_nodes_in_group("enemies")
 
+	match player_class:
+		PlayerClassData.ClassType.WARRIOR:
+			if idx == 0: # Coup d'épée
+				_hit_enemies_in_cone(enemies, dmg, reach, forward_dir, 0.2, is_crit)
+			elif idx == 1: # Tourbillon 360
+				DeathParticles.spawn(get_parent(), global_position + Vector3(0.0, 0.5, 0.0), Color(0.9, 0.3, 0.2))
+				_hit_enemies_in_radius(enemies, dmg, reach, is_crit)
+			elif idx == 2: # Charge
+				velocity += forward_dir * 14.0
+				_hit_enemies_in_cone(enemies, dmg, reach, forward_dir, 0.4, is_crit)
+			elif idx == 3: # Cri de guerre
+				current_health = minf(current_health + 25.0, get_effective_max_health())
+				DeathParticles.spawn(get_parent(), global_position + Vector3(0.0, 1.2, 0.0), Color(1.0, 0.85, 0.2))
+				_hit_enemies_in_radius(enemies, dmg, reach, is_crit)
+
+		PlayerClassData.ClassType.MAGE:
+			if idx == 0: # Éclair arcanique
+				DeathParticles.spawn(get_parent(), global_position + forward_dir * 2.0, Color(0.3, 0.6, 1.0))
+				_hit_enemies_in_cone(enemies, dmg, reach, forward_dir, 0.7, is_crit)
+			elif idx == 1: # Boule de feu
+				DeathParticles.spawn(get_parent(), global_position + forward_dir * 4.0, Color(1.0, 0.4, 0.1))
+				_hit_enemies_in_cone(enemies, dmg, reach, forward_dir, 0.4, is_crit)
+			elif idx == 2: # Nova de givre
+				DeathParticles.spawn(get_parent(), global_position + Vector3(0.0, 0.2, 0.0), Color(0.6, 0.9, 1.0))
+				_hit_enemies_in_radius(enemies, dmg, reach, is_crit)
+			elif idx == 3: # Tempête d'étoiles
+				DeathParticles.spawn(get_parent(), global_position + Vector3(0.0, 2.0, 0.0), Color(0.7, 0.3, 1.0))
+				_hit_enemies_in_radius(enemies, dmg, reach, is_crit)
+
+		PlayerClassData.ClassType.RANGER:
+			if idx == 0: # Tir rapide
+				_hit_enemies_in_cone(enemies, dmg, reach, forward_dir, 0.75, is_crit)
+			elif idx == 1: # Flèche perforante
+				DeathParticles.spawn(get_parent(), global_position + forward_dir * 3.0, Color(0.3, 1.0, 0.5))
+				_hit_enemies_in_cone(enemies, dmg, reach, forward_dir, 0.6, is_crit)
+			elif idx == 2: # Pluie de flèches
+				DeathParticles.spawn(get_parent(), global_position + forward_dir * 5.0, Color(0.8, 1.0, 0.3))
+				_hit_enemies_in_cone(enemies, dmg, reach, forward_dir, 0.3, is_crit)
+			elif idx == 3: # Bond évasif
+				velocity -= forward_dir * 12.0
+				velocity.y = 6.0
+				_hit_enemies_in_radius(enemies, dmg, reach, is_crit)
+
+		PlayerClassData.ClassType.ROGUE:
+			if idx == 0: # Coup de dague
+				_hit_enemies_in_cone(enemies, dmg, reach, forward_dir, 0.3, is_crit)
+			elif idx == 1: # Frappe dans l'ombre (téléportation derrière l'ennemi)
+				var closest_enemy: Node3D = _get_closest_enemy(enemies, reach * 2.0)
+				if closest_enemy != null:
+					global_position = closest_enemy.global_position - closest_enemy.global_transform.basis.z * 1.5
+					DeathParticles.spawn(get_parent(), global_position, Color(0.3, 0.1, 0.4))
+				_hit_enemies_in_cone(enemies, dmg, reach, forward_dir, 0.2, is_crit)
+			elif idx == 2: # Lames empoisonnées
+				DeathParticles.spawn(get_parent(), global_position, Color(0.4, 0.9, 0.2))
+				_hit_enemies_in_radius(enemies, dmg, reach, is_crit)
+			elif idx == 3: # Exécution
+				DeathParticles.spawn(get_parent(), global_position + forward_dir * 1.5, Color(0.9, 0.1, 0.1))
+				_hit_enemies_in_cone(enemies, dmg, reach, forward_dir, 0.4, is_crit)
+
+
+func _hit_enemies_in_cone(enemies: Array, dmg: float, reach: float, forward_dir: Vector3, min_dot: float, is_crit: bool) -> void:
 	for enemy in enemies:
 		if is_instance_valid(enemy):
 			var to_enemy: Vector3 = enemy.global_position - global_position
-			var dist: float = to_enemy.length()
-
-			if dist <= attack_range:
-				var dir_to_enemy := to_enemy.normalized()
-				if cam_forward.dot(dir_to_enemy) > 0.1:
+			if to_enemy.length() <= reach:
+				var dir := to_enemy.normalized()
+				if forward_dir.dot(dir) >= min_dot:
 					if enemy.has_method("take_damage"):
-						enemy.take_damage(final_damage, global_position)
+						enemy.take_damage(dmg, global_position)
+						if is_crit:
+							DamageLabel3D.spawn(get_parent(), enemy.global_position + Vector3(0.0, 1.4, 0.0), int(dmg), true)
 
 
-## Clic Droit : Compétence onde de choc circulaire (Whirlwind)
-func _perform_skill_attack() -> void:
-	if skill_attack_cooldown > 0.0 or current_stamina < skill_stamina_cost:
-		return
-
-	current_stamina -= skill_stamina_cost
-	skill_attack_cooldown = 0.75
-
-	var bonus_atk: float = inventory.get_total_attack_bonus() if inventory != null else 0.0
-	var final_damage: float = 45.0 + (bonus_atk * 1.5)
-
-	var skill_range: float = 4.2
-	var enemies := get_tree().get_nodes_in_group("enemies")
-
-	DeathParticles.spawn(get_parent(), global_position + Vector3(0.0, 0.4, 0.0), Color(0.2, 0.8, 0.95))
-
+func _hit_enemies_in_radius(enemies: Array, dmg: float, reach: float, is_crit: bool) -> void:
 	for enemy in enemies:
 		if is_instance_valid(enemy):
-			var dist: float = global_position.distance_to(enemy.global_position)
-			if dist <= skill_range:
+			if global_position.distance_to(enemy.global_position) <= reach:
 				if enemy.has_method("take_damage"):
-					enemy.take_damage(final_damage, global_position)
+					enemy.take_damage(dmg, global_position)
+					if is_crit:
+						DamageLabel3D.spawn(get_parent(), enemy.global_position + Vector3(0.0, 1.4, 0.0), int(dmg), true)
+
+
+func _get_closest_enemy(enemies: Array, max_dist: float) -> Node3D:
+	var closest: Node3D = null
+	var min_d: float = max_dist
+	for enemy in enemies:
+		if is_instance_valid(enemy):
+			var d: float = global_position.distance_to(enemy.global_position)
+			if d < min_d:
+				min_d = d
+				closest = enemy
+	return closest
 
 
 func _physics_process(delta: float) -> void:
-	basic_attack_cooldown = maxf(basic_attack_cooldown - delta, 0.0)
-	skill_attack_cooldown = maxf(skill_attack_cooldown - delta, 0.0)
+	# Réduction des cooldowns
+	for i in range(4):
+		skill_cooldowns[i] = maxf(skill_cooldowns[i] - delta, 0.0)
 
 	if invincibility_timer > 0.0:
 		invincibility_timer = maxf(invincibility_timer - delta, 0.0)
@@ -279,7 +421,7 @@ func _physics_process(delta: float) -> void:
 		velocity.y = jump_velocity
 
 	var input_dir := Vector2.ZERO
-	if inventory_ui == null or not inventory_ui.is_open:
+	if (inventory_ui == null or not inventory_ui.is_open) and (class_select_ui == null or not class_select_ui.is_open):
 		if Input.is_action_pressed("move_forward"):
 			input_dir.y -= 1.0
 		if Input.is_action_pressed("move_back"):
@@ -293,10 +435,12 @@ func _physics_process(delta: float) -> void:
 	var is_sprinting: bool = Input.is_action_pressed("sprint") and is_on_floor() and input_dir != Vector2.ZERO and current_stamina > 2.0
 
 	var max_sta: float = get_effective_max_stamina()
+	var regen_mult: float = talent_tree.get_stamina_regen_multiplier() if talent_tree != null else 1.0
+
 	if is_sprinting:
 		current_stamina = maxf(current_stamina - (sprint_stamina_cost * delta), 0.0)
 	else:
-		current_stamina = minf(current_stamina + (stamina_regen * delta), max_sta)
+		current_stamina = minf(current_stamina + (stamina_regen * regen_mult * delta), max_sta)
 
 	var target_speed: float = walk_speed
 	if is_swimming:
@@ -329,13 +473,12 @@ func _physics_process(delta: float) -> void:
 	if hud != null:
 		hud.update_health(current_health, get_effective_max_health())
 		hud.update_stamina(current_stamina, get_effective_max_stamina())
+		hud.update_skill_cooldowns(skill_cooldowns, skill_max_cooldowns)
 
 
-## Ajoute de l'expérience et gère le passage de niveau
 func add_xp(amount: int) -> void:
 	current_xp += amount
 
-	# Affichage de l'XP gagné
 	var label: Label3D = DamageLabel3D.spawn(get_parent(), global_position + Vector3(0.0, 1.2, 0.0), 0)
 	label.text = "+%d XP" % amount
 	label.modulate = Color(0.4, 0.8, 1.0)
@@ -349,22 +492,23 @@ func add_xp(amount: int) -> void:
 		current_health = get_effective_max_health()
 		current_stamina = get_effective_max_stamina()
 
-		# Effet visuel de montée de niveau
+		# Attribution du point de talent
+		if talent_tree != null:
+			talent_tree.on_level_up(level)
+
 		var lvl_label: Label3D = DamageLabel3D.spawn(get_parent(), global_position + Vector3(0.0, 1.9, 0.0), 0, true)
-		lvl_label.text = "★ NIVEAU %d ATTEINT ! ★" % level
+		lvl_label.text = "★ NIVEAU %d ATTEINT ! (+1 Talent) ★" % level
 		lvl_label.modulate = Color(1.0, 0.85, 0.2)
 		DeathParticles.spawn(get_parent(), global_position + Vector3(0.0, 1.0, 0.0), Color(1.0, 0.85, 0.2))
 
 		_save_current_game()
 
 
-## Réception des dégâts atténués par l'armure
 func take_damage(amount: float, from_position: Vector3 = Vector3.ZERO) -> void:
 	if invincibility_timer > 0.0 or current_health <= 0.0:
 		return
 
 	var def_bonus: float = inventory.get_total_defense_bonus() if inventory != null else 0.0
-	# Formule de réduction classique des RPG : Dégâts réels = Base * 100 / (100 + Défense)
 	var final_amount: float = maxf(amount * (100.0 / (100.0 + def_bonus)), 2.0)
 
 	current_health = maxf(current_health - final_amount, 0.0)
@@ -384,12 +528,14 @@ func take_damage(amount: float, from_position: Vector3 = Vector3.ZERO) -> void:
 
 func get_effective_max_health() -> float:
 	var bonus: float = inventory.get_total_health_bonus() if inventory != null else 0.0
-	return max_health + bonus
+	var talent_hp: float = talent_tree.get_bonus_health() if talent_tree != null else 0.0
+	return max_health + bonus + talent_hp
 
 
 func get_effective_max_stamina() -> float:
 	var bonus: float = inventory.get_total_stamina_bonus() if inventory != null else 0.0
-	return max_stamina + bonus
+	var talent_sta: float = talent_tree.get_bonus_stamina() if talent_tree != null else 0.0
+	return max_stamina + bonus + talent_sta
 
 
 func _respawn_player() -> void:
@@ -409,7 +555,7 @@ func _save_current_game() -> void:
 
 
 func _capture_mouse() -> void:
-	if inventory_ui != null and inventory_ui.is_open:
+	if (inventory_ui != null and inventory_ui.is_open) or (class_select_ui != null and class_select_ui.is_open):
 		return
 	Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 	is_mouse_captured = true
