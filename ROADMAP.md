@@ -56,10 +56,24 @@
   - Objets, outils et ressources générés procéduralement.
   - Système de fabrication basique (crafting).
 
-- [ ] **Étape 5 : Entités & Ennemis (Enemies)**
-  - Modèles de créatures voxel procédurales (ex: slimes, golems, créatures sauvages).
-  - IA simple de patrouille, détection, poursuite et combat.
-  - Système de dégâts et butin (loot drops).
+- [x] **Étape 5 : Entités & Ennemis (Enemies) & Système de Combat**
+  - 4 modèles d'ennemis voxel procéduraux construits en code :
+    - **Loups sauvages** ([`wolf.gd`](file:///Z:/scripts/enemies/wolf.gd)) : quadrupède avec museau, oreilles pointues, queue et animation de course (plaines, forêts, toundra).
+    - **Squelettes guerriers** ([`skeleton.gd`](file:///Z:/scripts/enemies/skeleton.gd)) : bipède avec crâne, cavités sombres, cage thoracique et épée d'os (désert, nuit).
+    - **Slimes cubiques** ([`slime.gd`](file:///Z:/scripts/enemies/slime.gd)) : gelée translucide avec noyau intérieur et sautillement squash & stretch (prairies, forêts, rivages).
+    - **Golems anciens** ([`golem.gd`](file:///Z:/scripts/enemies/golem.gd)) : colosse de roche massif avec yeux runiques cyan luisants et frappe lourde (montagnes, désert).
+  - IA complète sur [`enemy_base.gd`](file:///Z:/scripts/enemies/enemy_base.gd) : patrouille aléatoire, détection de proximité, poursuite et attaque de mêlée.
+  - Spawner dynamique d'ennemis par biome ([`enemy_spawner.gd`](file:///Z:/scripts/enemies/enemy_spawner.gd)) avec contrôle de population et déchargement au-delà de 65m.
+  - Système de combat réactif :
+    - Clic gauche : attaque de base ciblée (22 dégâts, animation de frappe).
+    - Clic droit : compétence tourbillon circulaire à 360° (45 dégâts, onde de choc, coût 30 endurance).
+  - Feedback visuel de combat :
+    - Barres de vie 3D procédurales au-dessus de chaque ennemi toujours orientées vers la caméra.
+    - Dégâts flottants 3D avec ascension et fondu ([`damage_label_3d.gd`](file:///Z:/scripts/ui/damage_label_3d.gd)).
+    - Particules de débris cubiques voxel à l'explosion mortelle ([`death_particles.gd`](file:///Z:/scripts/enemies/death_particles.gd)).
+    - Jauges de vie et d'endurance du joueur sur le HUD ([`player_hud.gd`](file:///Z:/scripts/ui/player_hud.gd)).
+    - Invincibilité temporaire (i-frames) avec clignotement du joueur et flash rouge à l'écran lors d'un coup reçu.
+  - Validation headless réussie.
 
 - [ ] **Étape 6 : Générateur Audio Procédural**
   - Synthèse sonore en temps réel via `AudioStreamGenerator` (bruits de pas, casse de bloc, coup, musique d'ambiance 8/16-bit synthétisée).
