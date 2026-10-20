@@ -190,14 +190,20 @@ func _worker_task_generate(coords: Vector2i) -> void:
 	var voxels: PackedByteArray = gen_result["voxels"]
 	var max_y: int = gen_result["max_y"]
 
-	var mesh_result: Dictionary = Chunk.build_mesh_data(voxels, coords, max_y, terrain_noise, temperature_noise, humidity_noise)
+	var dx: int = coords.x - last_player_chunk.x
+	var dz: int = coords.y - last_player_chunk.y
+	# Chunks distants (> 2 chunks) générés en LOD 1 (sans collisions lourdes et AO simplifié)
+	var lod: int = 1 if (dx * dx + dz * dz) > 4 else 0
+
+	var mesh_result: Dictionary = Chunk.build_mesh_data(voxels, coords, max_y, terrain_noise, temperature_noise, humidity_noise, lod)
 
 	thread_mutex.lock()
 	completed_queue.append({
 		"coords": coords,
 		"voxels": voxels,
 		"mesh_arrays": mesh_result["mesh_arrays"],
-		"collision_faces": mesh_result["collision_faces"]
+		"collision_faces": mesh_result["collision_faces"],
+		"decor_instances": mesh_result.get("decor_instances", [])
 	})
 	thread_mutex.unlock()
 
@@ -228,6 +234,7 @@ func _process_completed_chunks() -> void:
 		var voxels: PackedByteArray = item["voxels"]
 		var mesh_arrays: Array = item["mesh_arrays"]
 		var collision_faces: PackedVector3Array = item["collision_faces"]
+		var decor_instances: Array = item.get("decor_instances", [])
 
 		var dx: int = coords.x - last_player_chunk.x
 		var dz: int = coords.y - last_player_chunk.y
@@ -237,5 +244,5 @@ func _process_completed_chunks() -> void:
 			var chunk := Chunk.new(coords)
 			chunk.voxels = voxels
 			add_child(chunk)
-			chunk.apply_mesh_and_collision(mesh_arrays, collision_faces, terrain_material)
+			chunk.apply_mesh_and_collision(mesh_arrays, collision_faces, terrain_material, decor_instances)
 			active_chunks[coords] = chunk

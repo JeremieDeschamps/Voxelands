@@ -5,7 +5,9 @@
 !/.gitignore
 !/GEMINI.md
 !/ROADMAP.md
+!/README.md
 !/project.godot
+!/export_presets.cfg
 !/scripts/
 !/scripts/**
 !/scenes/

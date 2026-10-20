@@ -131,13 +131,54 @@
     - Quêtes actives, terminées, et statut du compagnon actif sauvegardés dans `user://save.json`.
   - Validation headless réussie.
 
-- [ ] **Étape 6 : Générateur Audio Procédural**
-  - Synthèse sonore en temps réel via `AudioStreamGenerator` (bruits de pas, casse de bloc, coup, musique d'ambiance 8/16-bit synthétisée).
+- [x] **Étape 6 : Générateur Audio Procédural**
+  - Synthétiseur audio 100% en code ([`sound_generator.gd`](file:///Z:/scripts/audio/sound_generator.gd)) via `AudioStreamGenerator` et `AudioStreamGeneratorPlayback` sans aucun asset audio externe.
+  - Effets sonores générés en temps réel par synthèse d'ondes et modulation :
+    - Bruits de pas (bruit blanc feutré cadencé).
+    - Sauts (glissando montant).
+    - Atterrissages (impact étouffé).
+    - Coups d'arme et sorts magiques (balayages de fréquence et whooshs).
+    - Impacts de dégâts reçus (onde carrée percutante).
+    - Ouverture de coffres au trésor (arpège cristallin montant).
+    - Montée de niveau (fanfare triomphante multi-harmonique).
+    - Apprivoisement de compagnon (gazouillis amical modulé en fréquence).
+  - Musique d'ambiance procédurale continue : nappe d'accords doux RPG (Do, Sol, Lam, Fa) avec enveloppes d'attaque et relâchement.
+  - Validation headless réussie.
 
-- [ ] **Étape 7 : Interface Utilisateur (UI)**
-  - Rendu UI avec Godot Control nodes (barre de vie/mana/endurance, réticule, hotbar, menu d'inventaire/crafting).
-  - Style visuel épuré sans texture externe.
+- [x] **Étape 7 : Interface Utilisateur (UI) Complète**
+  - **Écran Titre / Menu Principal** ([`main_menu_ui.gd`](file:///Z:/scripts/ui/main_menu_ui.gd)) :
+    - Bouton Nouvelle Partie.
+    - Bouton Continuer (détection automatique et chargement direct de `user://save.json`).
+    - Bouton Paramètres avec panneau superposé.
+    - Bouton Quitter le jeu.
+  - **Menu Pause en jeu** ([`pause_menu_ui.gd`](file:///Z:/scripts/ui/pause_menu_ui.gd)) accessible à tout moment via la touche `Échap` :
+    - Reprendre l'aventure.
+    - Menu Paramètres.
+    - Sauvegarde manuelle instantanée avec notification visuelle.
+    - Retour à l'Écran Titre.
+    - Quitter le jeu.
+  - **Panneau de Réglages complet** :
+    - Distance de rendu (curseur de 2 à 8 chunks, ajustement immédiat du monde).
+    - Volume principal (curseur 0% à 100%, liaison directe au `SoundGenerator`).
+    - Ombres dynamiques du soleil (bascule on/off pour gain de performances).
+    - Brouillard atmosphérique (bascule on/off).
+    - Limite de taux de rafraîchissement (60 FPS, 120 FPS ou Illimité via `Engine.max_fps`).
+  - Gestion hiérarchique prioritaire de la touche `Échap` : fermeture dans l'ordre de l'inventaire, de la carte, des dialogues de PNJ, puis ouverture/fermeture du menu pause.
+  - Style visuel épuré 100% vectoriel et typographique Godot (zéro texture externe).
+  - Validation headless réussie.
 
-- [ ] **Étape 8 : Finitions, Optimisation & Export**
-  - Optimisation du maillage des voxels (culling des faces cachées).
-  - Téléchargement des templates d'export et compilation/exportation native.
+- [x] **Étape 8 : Finitions, Optimisations & Exportation**
+  - **Optimisations de performances majeures** :
+    - Culling des faces internes cachées entre voxels adjacents (SurfaceTool ArrayMesh).
+    - Système LOD 1 pour les chunks distants (> 2 chunks) : simplification du calcul d'Ambient Occlusion et exclusion des collisions physiques lourdes (`ConcavePolygonShape3D`) réservées aux chunks proches.
+    - Instanciation GPU via `MultiMeshInstance3D` pour l'ensemble du décor de surface (fleurs, herbes, buissons), éliminant les allocations de mesh CPU superflues et minimisant les draw calls.
+    - Génération asynchrone multithreadée via `WorkerThreadPool` avec élimination des requêtes redondantes.
+  - **Cycle Jour / Nuit dynamique** ([`day_night_cycle.gd`](file:///Z:/scripts/world/day_night_cycle.gd)) :
+    - Orbite continue du soleil et de la lune sur 24 heures virtuelles.
+    - Transitions chromatiques graduelles du ciel procédural (zénith, horizon), de la lumière directionnelle et de la couleur du brouillard.
+    - Extinction automatique des ombres et baisse de la luminosité lors de la nuit.
+  - **Configuration d'Exportation Windows** :
+    - Fichier de préréglages standardisé [`export_presets.cfg`](file:///Z:/export_presets.cfg) pour "Windows Desktop" (x86_64, embed_pck=true, dossier de sortie `build/Voxelands.exe`).
+  - **Documentation complète** dans [`README.md`](file:///Z:/README.md) détaillant les touches, systèmes, architecture et la commande officielle d'exportation headless.
+  - Validation headless réussie (Code de sortie 0).
+

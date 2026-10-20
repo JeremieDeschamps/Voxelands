@@ -19,6 +19,9 @@ const DialogUI = preload("res://scripts/ui/dialog_ui.gd")
 const WorldMapUI = preload("res://scripts/ui/world_map_ui.gd")
 const PetCompanion = preload("res://scripts/player/pet_companion.gd")
 const CompanionData = preload("res://scripts/player/companion_data.gd")
+const SoundGenerator = preload("res://scripts/audio/sound_generator.gd")
+const PauseMenuUI = preload("res://scripts/ui/pause_menu_ui.gd")
+const MainMenuUI = preload("res://scripts/ui/main_menu_ui.gd")
 
 # Caractéristiques physiques
 @export var walk_speed: float = 6.0
@@ -65,6 +68,10 @@ var quest_system: QuestSystem = null
 var dialog_ui: DialogUI = null
 var world_map_ui: WorldMapUI = null
 var active_companion: PetCompanion = null
+var sound_generator: SoundGenerator = null
+var pause_menu_ui: PauseMenuUI = null
+var main_menu_ui: MainMenuUI = null
+var footstep_timer: float = 0.0
 
 # États du joueur
 var is_gliding: bool = false
@@ -88,19 +95,30 @@ func _ready() -> void:
 
 	_setup_inputs_if_missing()
 	_build_player_components()
-	_capture_mouse()
-
-	# Chargement de la sauvegarde si elle existe
-	var saved_data: Dictionary = SaveSystem.load_game(self)
-
-	# Si aucune sauvegarde existante, afficher le choix de classe au démarrage
-	if saved_data.is_empty():
-		class_select_ui.open_selection()
-	else:
-		_apply_class_visuals()
 
 	current_health = get_effective_max_health()
 	current_stamina = get_effective_max_stamina()
+
+	# Afficher le menu principal au démarrage
+	if main_menu_ui != null:
+		main_menu_ui.open_main_menu()
+
+
+func _on_start_game_from_menu(is_new_game: bool) -> void:
+	if is_new_game:
+		if FileAccess.file_exists("user://save.json"):
+			DirAccess.remove_absolute("user://save.json")
+		class_select_ui.open_selection()
+	else:
+		var saved_data: Dictionary = SaveSystem.load_game(self)
+		if saved_data.is_empty():
+			class_select_ui.open_selection()
+		else:
+			_apply_class_visuals()
+
+	current_health = get_effective_max_health()
+	current_stamina = get_effective_max_stamina()
+	_capture_mouse()
 
 
 func _setup_inputs_if_missing() -> void:
@@ -199,6 +217,25 @@ func _build_player_components() -> void:
 	var world_node = get_node_or_null("../World")
 	world_map_ui.setup(self, world_node)
 
+	# 10. Synthétiseur Audio Procédural
+	sound_generator = SoundGenerator.new()
+	sound_generator.name = "SoundGenerator"
+	add_child(sound_generator)
+
+	# 11. Menu Pause & Réglages
+	pause_menu_ui = PauseMenuUI.new()
+	pause_menu_ui.name = "PauseMenuUI"
+	add_child(pause_menu_ui)
+	pause_menu_ui.setup(self, world_node, sound_generator)
+	pause_menu_ui.return_to_main_menu.connect(func(): if main_menu_ui != null: main_menu_ui.open_main_menu())
+
+	# 12. Menu Principal
+	main_menu_ui = MainMenuUI.new()
+	main_menu_ui.name = "MainMenuUI"
+	add_child(main_menu_ui)
+	main_menu_ui.setup(pause_menu_ui)
+	main_menu_ui.start_game_requested.connect(_on_start_game_from_menu)
+
 
 func set_player_class(c_type: int, save: bool = true) -> void:
 	player_class = c_type
@@ -227,7 +264,26 @@ func get_class_name_str() -> String:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if (inventory_ui != null and inventory_ui.is_open) or (class_select_ui != null and class_select_ui.is_open) or (dialog_ui != null and dialog_ui.is_open) or (world_map_ui != null and world_map_ui.is_open):
+	if main_menu_ui != null and main_menu_ui.is_open:
+		return
+
+	if event is InputEventKey and event.pressed and not event.echo:
+		if event.keycode == KEY_ESCAPE:
+			if inventory_ui != null and inventory_ui.is_open:
+				inventory_ui.close_inventory()
+			elif world_map_ui != null and world_map_ui.is_open:
+				world_map_ui.close_map()
+			elif dialog_ui != null and dialog_ui.is_open:
+				dialog_ui.close_dialog()
+			elif class_select_ui != null and class_select_ui.is_open:
+				pass
+			elif pause_menu_ui != null:
+				pause_menu_ui.toggle_pause()
+			else:
+				_release_mouse()
+			return
+
+	if (inventory_ui != null and inventory_ui.is_open) or (class_select_ui != null and class_select_ui.is_open) or (dialog_ui != null and dialog_ui.is_open) or (world_map_ui != null and world_map_ui.is_open) or (pause_menu_ui != null and pause_menu_ui.is_open):
 		return
 
 	if event is InputEventMouseButton:
@@ -248,9 +304,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				spring_arm.spring_length = clampf(spring_arm.spring_length + zoom_step, min_zoom, max_zoom)
 
 	elif event is InputEventKey and event.pressed and not event.echo:
-		if event.keycode == KEY_ESCAPE:
-			_release_mouse()
-		elif is_mouse_captured:
+		if is_mouse_captured:
 			if event.is_action_pressed("skill_2"):
 				_use_skill(2) # Compétence 2 (E)
 			elif event.is_action_pressed("skill_3"):
@@ -304,6 +358,10 @@ func _use_skill(idx: int) -> void:
 	# Animation du bras droit
 	if character_model != null and character_model.right_arm_pivot != null:
 		character_model.right_arm_pivot.rotation.x = -deg_to_rad(90.0)
+
+	if sound_generator != null:
+		var is_magic: bool = (player_class == PlayerClassData.ClassType.MAGE)
+		sound_generator.play_attack(is_magic)
 
 	# Calcul des dégâts et du critique
 	var bonus_atk: float = inventory.get_total_attack_bonus() if inventory != null else 0.0
@@ -458,6 +516,8 @@ func _physics_process(delta: float) -> void:
 
 	if is_on_floor() and Input.is_action_just_pressed("jump"):
 		velocity.y = jump_velocity
+		if sound_generator != null:
+			sound_generator.play_jump()
 
 	var input_dir := Vector2.ZERO
 	if (inventory_ui == null or not inventory_ui.is_open) and (class_select_ui == null or not class_select_ui.is_open):
@@ -509,6 +569,16 @@ func _physics_process(delta: float) -> void:
 	if character_model != null:
 		character_model.update_animation(horizontal_speed, delta, is_on_floor(), is_gliding, is_swimming)
 
+	# Bruit de pas procédural
+	if is_on_floor() and horizontal_speed > 0.8:
+		footstep_timer += delta * (horizontal_speed / 4.0)
+		if footstep_timer >= 0.45:
+			footstep_timer = 0.0
+			if sound_generator != null:
+				sound_generator.play_footstep()
+	else:
+		footstep_timer = 0.0
+
 	if hud != null:
 		hud.update_health(current_health, get_effective_max_health())
 		hud.update_stamina(current_stamina, get_effective_max_stamina())
@@ -536,6 +606,9 @@ func add_xp(amount: int) -> void:
 		if talent_tree != null:
 			talent_tree.on_level_up(level)
 
+		if sound_generator != null:
+			sound_generator.play_level_up()
+
 		var lvl_label: Label3D = DamageLabel3D.spawn(get_parent(), global_position + Vector3(0.0, 1.9, 0.0), 0, true)
 		lvl_label.text = "★ NIVEAU %d ATTEINT ! (+1 Talent) ★" % level
 		lvl_label.modulate = Color(1.0, 0.85, 0.2)
@@ -553,6 +626,9 @@ func take_damage(amount: float, from_position: Vector3 = Vector3.ZERO) -> void:
 
 	current_health = maxf(current_health - final_amount, 0.0)
 	invincibility_timer = invincibility_duration
+
+	if sound_generator != null:
+		sound_generator.play_hit()
 
 	if hud != null:
 		hud.trigger_damage_flash()
@@ -665,6 +741,8 @@ func _interact_with_target() -> void:
 			if not a.is_tamed and global_position.distance_to(a.global_position) <= 4.0:
 				a.tame(self)
 				active_companion = a
+				if sound_generator != null:
+					sound_generator.play_tame()
 				if hud != null:
 					hud.update_companion_hud(a)
 				var lbl: Label3D = DamageLabel3D.spawn(get_parent(), a.global_position + Vector3(0, 1.2, 0), 0, true)

@@ -91,8 +91,10 @@ func open_chest(player: CharacterBody3D) -> void:
 		overhead_label.text = "✨ Ouvert"
 		overhead_label.modulate = Color(0.6, 0.6, 0.65)
 
-	# Progression des quêtes du joueur
+	# Progression des quêtes du joueur et son
 	if player != null:
+		if "sound_generator" in player and player.sound_generator != null:
+			player.sound_generator.play_chest()
 		if "quest_system" in player and player.quest_system != null:
 			player.quest_system.notify_chest_opened()
 		if "add_xp" in player:

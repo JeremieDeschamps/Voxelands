@@ -16,6 +16,7 @@ var chunk_coords: Vector2i = Vector2i.ZERO
 var voxels: PackedByteArray = PackedByteArray()
 var mesh_instance: MeshInstance3D = null
 var collision_shape: CollisionShape3D = null
+var decor_multimesh: MultiMeshInstance3D = null
 
 # Table des 6 faces d'un cube (UP, DOWN, NORTH, SOUTH, WEST, EAST)
 const FACE_DIRECTIONS: Array[Vector3i] = [
@@ -276,13 +277,14 @@ static func compute_vertex_ao(data: PackedByteArray, coords: Vector2i, pos: Vect
 			return 1.0
 
 
-## Construit les tableaux de géométrie pour le maillage et les collisions (Thread-safe)
-static func build_mesh_data(data: PackedByteArray, coords: Vector2i, max_y: int, t_noise: FastNoiseLite, temp_noise: FastNoiseLite, hum_noise: FastNoiseLite) -> Dictionary:
+## Construit les tableaux de géométrie pour le maillage et les collisions (Thread-safe) avec support LOD
+static func build_mesh_data(data: PackedByteArray, coords: Vector2i, max_y: int, t_noise: FastNoiseLite, temp_noise: FastNoiseLite, hum_noise: FastNoiseLite, lod_level: int = 0) -> Dictionary:
 	var vertices := PackedVector3Array()
 	var normals := PackedVector3Array()
 	var colors := PackedColorArray()
 	var indices := PackedInt32Array()
 	var collision_faces := PackedVector3Array()
+	var decor_instances: Array[Dictionary] = []
 
 	var vertex_counter: int = 0
 
@@ -295,68 +297,14 @@ static func build_mesh_data(data: PackedByteArray, coords: Vector2i, max_y: int,
 
 				var base_offset := Vector3(x, y, z)
 
-				# Rendu spécial en croix pour les plantes (fleurs, herbes hautes, arbustes)
+				# Décor surfacique géré via MultiMeshInstance3D pour des performances optimales
 				if BlockTypes.is_plant(block):
-					var plant_color: Color = BlockTypes.get_face_color(block, Vector3i.UP)
-
-					# Diagonale 1
-					var d1_v0: Vector3 = base_offset + Vector3(0.1, 0.0, 0.1)
-					var d1_v1: Vector3 = base_offset + Vector3(0.9, 0.0, 0.9)
-					var d1_v2: Vector3 = base_offset + Vector3(0.9, 0.85, 0.9)
-					var d1_v3: Vector3 = base_offset + Vector3(0.1, 0.85, 0.1)
-
-					vertices.push_back(d1_v0)
-					vertices.push_back(d1_v1)
-					vertices.push_back(d1_v2)
-					vertices.push_back(d1_v3)
-
-					for i in range(4):
-						normals.push_back(Vector3(0.707, 0, -0.707))
-						colors.push_back(plant_color)
-
-					# Double-face
-					indices.push_back(vertex_counter + 0)
-					indices.push_back(vertex_counter + 1)
-					indices.push_back(vertex_counter + 2)
-					indices.push_back(vertex_counter + 0)
-					indices.push_back(vertex_counter + 2)
-					indices.push_back(vertex_counter + 3)
-					indices.push_back(vertex_counter + 0)
-					indices.push_back(vertex_counter + 2)
-					indices.push_back(vertex_counter + 1)
-					indices.push_back(vertex_counter + 0)
-					indices.push_back(vertex_counter + 3)
-					indices.push_back(vertex_counter + 2)
-					vertex_counter += 4
-
-					# Diagonale 2
-					var d2_v0: Vector3 = base_offset + Vector3(0.1, 0.0, 0.9)
-					var d2_v1: Vector3 = base_offset + Vector3(0.9, 0.0, 0.1)
-					var d2_v2: Vector3 = base_offset + Vector3(0.9, 0.85, 0.1)
-					var d2_v3: Vector3 = base_offset + Vector3(0.1, 0.85, 0.9)
-
-					vertices.push_back(d2_v0)
-					vertices.push_back(d2_v1)
-					vertices.push_back(d2_v2)
-					vertices.push_back(d2_v3)
-
-					for i in range(4):
-						normals.push_back(Vector3(0.707, 0, 0.707))
-						colors.push_back(plant_color)
-
-					indices.push_back(vertex_counter + 0)
-					indices.push_back(vertex_counter + 1)
-					indices.push_back(vertex_counter + 2)
-					indices.push_back(vertex_counter + 0)
-					indices.push_back(vertex_counter + 2)
-					indices.push_back(vertex_counter + 3)
-					indices.push_back(vertex_counter + 0)
-					indices.push_back(vertex_counter + 2)
-					indices.push_back(vertex_counter + 1)
-					indices.push_back(vertex_counter + 0)
-					indices.push_back(vertex_counter + 3)
-					indices.push_back(vertex_counter + 2)
-					vertex_counter += 4
+					if lod_level == 0:
+						var plant_color: Color = BlockTypes.get_face_color(block, Vector3i.UP)
+						decor_instances.append({
+							"pos": base_offset + Vector3(0.5, 0.45, 0.5),
+							"color": plant_color
+						})
 					continue
 
 				# Rendu voxel cubique standard
@@ -380,12 +328,16 @@ static func build_mesh_data(data: PackedByteArray, coords: Vector2i, max_y: int,
 					var tan_u: Vector3i = tangents[0]
 					var tan_v: Vector3i = tangents[1]
 
-					var ao_factors: Array[float] = [
-						compute_vertex_ao(data, coords, block_pos, dir, -tan_u, -tan_v, t_noise, temp_noise, hum_noise),
-						compute_vertex_ao(data, coords, block_pos, dir, -tan_u, tan_v, t_noise, temp_noise, hum_noise),
-						compute_vertex_ao(data, coords, block_pos, dir, tan_u, tan_v, t_noise, temp_noise, hum_noise),
-						compute_vertex_ao(data, coords, block_pos, dir, tan_u, -tan_v, t_noise, temp_noise, hum_noise)
-					]
+					var ao_factors: Array[float]
+					if lod_level > 0:
+						ao_factors = [1.0, 1.0, 1.0, 1.0]
+					else:
+						ao_factors = [
+							compute_vertex_ao(data, coords, block_pos, dir, -tan_u, -tan_v, t_noise, temp_noise, hum_noise),
+							compute_vertex_ao(data, coords, block_pos, dir, -tan_u, tan_v, t_noise, temp_noise, hum_noise),
+							compute_vertex_ao(data, coords, block_pos, dir, tan_u, tan_v, t_noise, temp_noise, hum_noise),
+							compute_vertex_ao(data, coords, block_pos, dir, tan_u, -tan_v, t_noise, temp_noise, hum_noise)
+						]
 
 					var v0: Vector3 = base_offset + face_verts[0]
 					var v1: Vector3 = base_offset + face_verts[1]
@@ -416,7 +368,7 @@ static func build_mesh_data(data: PackedByteArray, coords: Vector2i, max_y: int,
 						indices.push_back(vertex_counter + 3)
 						indices.push_back(vertex_counter + 0)
 
-						if is_block_solid:
+						if lod_level == 0 and is_block_solid:
 							collision_faces.push_back(v1)
 							collision_faces.push_back(v2)
 							collision_faces.push_back(v3)
@@ -431,7 +383,7 @@ static func build_mesh_data(data: PackedByteArray, coords: Vector2i, max_y: int,
 						indices.push_back(vertex_counter + 2)
 						indices.push_back(vertex_counter + 3)
 
-						if is_block_solid:
+						if lod_level == 0 and is_block_solid:
 							collision_faces.push_back(v0)
 							collision_faces.push_back(v1)
 							collision_faces.push_back(v2)
@@ -450,12 +402,13 @@ static func build_mesh_data(data: PackedByteArray, coords: Vector2i, max_y: int,
 
 	return {
 		"mesh_arrays": mesh_arrays,
-		"collision_faces": collision_faces
+		"collision_faces": collision_faces,
+		"decor_instances": decor_instances
 	}
 
 
-## Applique le maillage et la collision sur le Chunk (Thread Principal)
-func apply_mesh_and_collision(mesh_arrays: Array, collision_faces: PackedVector3Array, material: Material) -> void:
+## Applique le maillage, les collisions et le décor MultiMesh sur le Chunk (Thread Principal)
+func apply_mesh_and_collision(mesh_arrays: Array, collision_faces: PackedVector3Array, material: Material, decor_data: Array = []) -> void:
 	var vertices: PackedVector3Array = mesh_arrays[Mesh.ARRAY_VERTEX]
 	if vertices.is_empty():
 		return
@@ -470,6 +423,7 @@ func apply_mesh_and_collision(mesh_arrays: Array, collision_faces: PackedVector3
 
 	mesh_instance.mesh = array_mesh
 
+	# Collision (uniquement pour les chunks proches en LOD 0)
 	if not collision_faces.is_empty():
 		if collision_shape == null:
 			collision_shape = CollisionShape3D.new()
@@ -478,3 +432,42 @@ func apply_mesh_and_collision(mesh_arrays: Array, collision_faces: PackedVector3
 		var shape := ConcavePolygonShape3D.new()
 		shape.set_faces(collision_faces)
 		collision_shape.shape = shape
+	elif collision_shape != null:
+		collision_shape.shape = null
+
+	# Décor via MultiMeshInstance3D
+	_apply_decor_multimesh(decor_data)
+
+
+func _apply_decor_multimesh(decor_data: Array) -> void:
+	if decor_data.is_empty():
+		if decor_multimesh != null:
+			decor_multimesh.visible = false
+		return
+
+	if decor_multimesh == null:
+		decor_multimesh = MultiMeshInstance3D.new()
+		decor_multimesh.name = "DecorMultiMesh"
+		add_child(decor_multimesh)
+
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.use_colors = true
+	mm.instance_count = decor_data.size()
+
+	var cross_box := BoxMesh.new()
+	cross_box.size = Vector3(0.5, 0.75, 0.5)
+	var cross_mat := StandardMaterial3D.new()
+	cross_mat.vertex_color_use_as_albedo = true
+	cross_mat.roughness = 0.9
+	cross_mat.cull_mode = BaseMaterial3D.CULL_BACK
+	cross_box.material = cross_mat
+	mm.mesh = cross_box
+
+	for i in range(decor_data.size()):
+		var d: Dictionary = decor_data[i]
+		mm.set_instance_transform(i, Transform3D(Basis(), d["pos"]))
+		mm.set_instance_color(i, d["color"])
+
+	decor_multimesh.multimesh = mm
+	decor_multimesh.visible = true
