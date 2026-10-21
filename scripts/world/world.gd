@@ -1,11 +1,12 @@
 class_name World
 extends Node3D
 
-## Gestionnaire du monde voxel infini par chunks avec biomes, décorations et graine reproductible.
+## Gestionnaire du monde voxel infini par chunks avec biomes, greedy meshing, multithreading et statistiques.
 
 const Chunk = preload("res://scripts/world/chunk.gd")
 const VillageGenerator = preload("res://scripts/world/village_generator.gd")
 const DungeonGenerator = preload("res://scripts/world/dungeon_generator.gd")
+const VoxelConstants = preload("res://scripts/world/voxel_constants.gd")
 
 @export var world_seed: int = 1337
 @export var render_distance: int = 4
@@ -16,13 +17,13 @@ const MAX_CONCURRENT_TASKS: int = 4
 var village_generator: VillageGenerator = null
 var dungeon_generator: DungeonGenerator = null
 
-
 # Générateurs de bruit reproductibles
 var terrain_noise: FastNoiseLite = FastNoiseLite.new()
 var temperature_noise: FastNoiseLite = FastNoiseLite.new()
 var humidity_noise: FastNoiseLite = FastNoiseLite.new()
 
-var terrain_material: StandardMaterial3D = StandardMaterial3D.new()
+var terrain_material: Material = null
+var water_material: Material = null
 
 # Dictionnaires d'état des chunks
 var active_chunks: Dictionary = {}    # Vector2i -> Chunk
@@ -35,6 +36,11 @@ var completed_queue: Array[Dictionary] = []
 
 var last_player_chunk: Vector2i = Vector2i(0, 0)
 var update_timer: float = 0.0
+
+# Statistiques de performance (pour le panneau F3)
+var total_triangles: int = 0
+var recent_chunk_times: Array[float] = []
+var avg_chunk_time_ms: float = 0.0
 
 
 func _ready() -> void:
@@ -55,11 +61,7 @@ func _ready() -> void:
 		target_node = get_viewport().get_camera_3d()
 
 	if target_node != null:
-		var target_pos: Vector3 = target_node.global_position
-		last_player_chunk = Vector2i(
-			int(floor(target_pos.x / float(Chunk.CHUNK_WIDTH))),
-			int(floor(target_pos.z / float(Chunk.CHUNK_DEPTH)))
-		)
+		last_player_chunk = VoxelConstants.world_to_chunk_coords(target_node.global_position)
 
 	_update_chunks_around_target()
 
@@ -87,6 +89,9 @@ func reinitialize_world(new_seed: int) -> void:
 		if is_instance_valid(chunk):
 			chunk.queue_free()
 	active_chunks.clear()
+	total_triangles = 0
+	recent_chunk_times.clear()
+	avg_chunk_time_ms = 0.0
 
 	# 3. Réinitialisation des bruits et générateurs
 	world_seed = new_seed
@@ -98,11 +103,7 @@ func reinitialize_world(new_seed: int) -> void:
 		dungeon_generator.setup(world_seed, terrain_noise)
 
 	if target_node != null:
-		var target_pos: Vector3 = target_node.global_position
-		last_player_chunk = Vector2i(
-			int(floor(target_pos.x / float(Chunk.CHUNK_WIDTH))),
-			int(floor(target_pos.z / float(Chunk.CHUNK_DEPTH)))
-		)
+		last_player_chunk = VoxelConstants.world_to_chunk_coords(target_node.global_position)
 
 	_update_chunks_around_target()
 
@@ -130,9 +131,29 @@ func _init_noises() -> void:
 
 
 func _init_material() -> void:
-	terrain_material.vertex_color_use_as_albedo = true
-	terrain_material.roughness = 0.85
-	terrain_material.cull_mode = BaseMaterial3D.CULL_BACK
+	var terrain_shader = load("res://shaders/terrain.gdshader")
+	if terrain_shader != null:
+		var sm := ShaderMaterial.new()
+		sm.shader = terrain_shader
+		terrain_material = sm
+	else:
+		var std_mat := StandardMaterial3D.new()
+		std_mat.vertex_color_use_as_albedo = true
+		std_mat.roughness = 0.85
+		std_mat.cull_mode = BaseMaterial3D.CULL_BACK
+		terrain_material = std_mat
+
+	var water_shader = load("res://shaders/water.gdshader")
+	if water_shader != null:
+		var wm := ShaderMaterial.new()
+		wm.shader = water_shader
+		water_material = wm
+	else:
+		var w_std := StandardMaterial3D.new()
+		w_std.albedo_color = Color(0.18, 0.55, 0.85, 0.75)
+		w_std.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		w_std.roughness = 0.1
+		water_material = w_std
 
 
 func _process(delta: float) -> void:
@@ -148,10 +169,7 @@ func _process(delta: float) -> void:
 
 		if target_node != null:
 			var target_pos: Vector3 = target_node.global_position
-			var current_chunk := Vector2i(
-				int(floor(target_pos.x / float(Chunk.CHUNK_WIDTH))),
-				int(floor(target_pos.z / float(Chunk.CHUNK_DEPTH)))
-			)
+			var current_chunk: Vector2i = VoxelConstants.world_to_chunk_coords(target_pos)
 
 			if current_chunk != last_player_chunk:
 				last_player_chunk = current_chunk
@@ -180,6 +198,7 @@ func _update_chunks_around_target() -> void:
 		var chunk: Chunk = active_chunks[coords]
 		active_chunks.erase(coords)
 		if is_instance_valid(chunk):
+			total_triangles = maxi(0, total_triangles - chunk.triangle_count)
 			chunk.queue_free()
 
 	# Priorisation des nouveaux chunks par distance
@@ -229,7 +248,7 @@ func _worker_task_generate(coords: Vector2i) -> void:
 
 	var dx: int = coords.x - last_player_chunk.x
 	var dz: int = coords.y - last_player_chunk.y
-	# Chunks distants (> 2 chunks) générés en LOD 1 (sans collisions lourdes et AO simplifié)
+	# Chunks distants (> 2 chunks) en LOD 1 (sans collision physique, AO simplifiée)
 	var lod: int = 1 if (dx * dx + dz * dz) > 4 else 0
 
 	var mesh_result: Dictionary = Chunk.build_mesh_data(voxels, coords, max_y, terrain_noise, temperature_noise, humidity_noise, lod)
@@ -239,8 +258,11 @@ func _worker_task_generate(coords: Vector2i) -> void:
 		"coords": coords,
 		"voxels": voxels,
 		"mesh_arrays": mesh_result["mesh_arrays"],
+		"water_arrays": mesh_result.get("water_arrays", []),
 		"collision_faces": mesh_result["collision_faces"],
-		"decor_instances": mesh_result.get("decor_instances", [])
+		"decor_instances": mesh_result.get("decor_instances", []),
+		"triangles": mesh_result.get("triangles", 0),
+		"build_time_ms": mesh_result.get("build_time_ms", 0.0)
 	})
 	thread_mutex.unlock()
 
@@ -270,8 +292,11 @@ func _process_completed_chunks() -> void:
 		var coords: Vector2i = item["coords"]
 		var voxels: PackedByteArray = item["voxels"]
 		var mesh_arrays: Array = item["mesh_arrays"]
+		var water_arrays: Array = item.get("water_arrays", [])
 		var collision_faces: PackedVector3Array = item["collision_faces"]
 		var decor_instances: Array = item.get("decor_instances", [])
+		var num_tris: int = item.get("triangles", 0)
+		var b_time: float = item.get("build_time_ms", 0.0)
 
 		var dx: int = coords.x - last_player_chunk.x
 		var dz: int = coords.y - last_player_chunk.y
@@ -281,5 +306,14 @@ func _process_completed_chunks() -> void:
 			var chunk := Chunk.new(coords)
 			chunk.voxels = voxels
 			add_child(chunk)
-			chunk.apply_mesh_and_collision(mesh_arrays, collision_faces, terrain_material, decor_instances)
+			chunk.apply_mesh_and_collision(mesh_arrays, collision_faces, terrain_material, decor_instances, num_tris, b_time, water_arrays, water_material)
 			active_chunks[coords] = chunk
+
+			total_triangles += num_tris
+			recent_chunk_times.append(b_time)
+			if recent_chunk_times.size() > 20:
+				recent_chunk_times.pop_front()
+			var sum_t: float = 0.0
+			for t in recent_chunk_times:
+				sum_t += t
+			avg_chunk_time_ms = sum_t / float(recent_chunk_times.size())

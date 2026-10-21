@@ -12,6 +12,7 @@ const SlimeEnemy = preload("res://scripts/enemies/slime.gd")
 const GolemEnemy = preload("res://scripts/enemies/golem.gd")
 const PetCompanion = preload("res://scripts/player/pet_companion.gd")
 const CompanionData = preload("res://scripts/player/companion_data.gd")
+const VoxelConstants = preload("res://scripts/world/voxel_constants.gd")
 
 @export var max_enemies: int = 14
 @export var max_wild_animals: int = 8
@@ -61,13 +62,17 @@ func _attempt_spawn() -> void:
 	var temp_noise: FastNoiseLite = world_ref.temperature_noise
 	var hum_noise: FastNoiseLite = world_ref.humidity_noise
 
-	var sy: int = Chunk.get_height_at(t_noise, sx, sz)
-	if sy <= Chunk.SEA_LEVEL:
+	var bpos := VoxelConstants.world_to_block_2d(float(sx), float(sz))
+	var sy_vox: int = Chunk.get_height_at(t_noise, bpos.x, bpos.y)
+	var sy_m: float = float(sy_vox) * VoxelConstants.VOXEL_SIZE
+	if sy_m <= VoxelConstants.SEA_LEVEL_METERS:
 		return # Évite de faire apparaître des ennemis terrestres sous l'eau
 
-	var temp: float = temp_noise.get_noise_2d(float(sx), float(sz))
-	var hum: float = hum_noise.get_noise_2d(float(sx), float(sz))
-	var biome: int = Chunk.get_biome_at(temp, hum, sy)
+	var sx_m: float = float(sx)
+	var sz_m: float = float(sz)
+	var temp: float = temp_noise.get_noise_2d(sx_m, sz_m)
+	var hum: float = hum_noise.get_noise_2d(sx_m, sz_m)
+	var biome: int = Chunk.get_biome_at(temp, hum, sy_vox)
 
 	# Chance d'apparition d'un animal sauvage apprivoisable (35% des apparitions)
 	var wild_animals: Array[Node] = get_tree().get_nodes_in_group("companions")
@@ -82,7 +87,7 @@ func _attempt_spawn() -> void:
 		var animal := PetCompanion.new()
 		animal.species_type = sp_id
 		animal.is_tamed = false
-		animal.position = Vector3(float(sx), float(sy) + 0.8, float(sz))
+		animal.position = Vector3(sx_m, sy_m + 0.8, sz_m)
 		add_child(animal)
 		return
 
@@ -125,7 +130,7 @@ func _attempt_spawn() -> void:
 				enemy_instance = SkeletonEnemy.new()
 
 	if enemy_instance != null:
-		enemy_instance.position = Vector3(float(sx), float(sy) + 1.2, float(sz))
+		enemy_instance.position = Vector3(sx_m, sy_m + 1.2, sz_m)
 		add_child(enemy_instance)
 
 

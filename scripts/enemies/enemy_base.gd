@@ -7,6 +7,7 @@ const DamageLabel3D = preload("res://scripts/ui/damage_label_3d.gd")
 const DeathParticles = preload("res://scripts/enemies/death_particles.gd")
 const ItemData = preload("res://scripts/items/item_data.gd")
 const LootDrop = preload("res://scripts/items/loot_drop.gd")
+const VoxelConstants = preload("res://scripts/world/voxel_constants.gd")
 
 enum State {
 	IDLE,
@@ -123,6 +124,18 @@ func _physics_process(delta: float) -> void:
 	# Déplacement physique
 	velocity.x += knockback_velocity.x
 	velocity.z += knockback_velocity.z
+
+	# Franchissement automatique des petites marches pour les ennemis
+	if is_on_floor():
+		var horiz := Vector3(velocity.x, 0.0, velocity.z)
+		if horiz.length_squared() > 0.1 and test_move(global_transform, horiz * delta):
+			var max_step: float = 2.0 * VoxelConstants.VOXEL_SIZE + 0.05
+			var up_step := Vector3(0.0, max_step, 0.0)
+			if not test_move(global_transform, up_step):
+				var step_tr := global_transform.translated(up_step)
+				if not test_move(step_tr, horiz * delta):
+					global_position.y += max_step * 0.5
+
 	move_and_slide()
 
 	# Mise à jour de l'affichage de la barre de vie

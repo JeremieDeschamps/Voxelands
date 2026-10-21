@@ -202,5 +202,60 @@
     - Suppression de la face inférieure au fond du monde (`y = 0`) et culling inter-chunk vérifié.
     - Activation de `backface_collision = true` sur `ConcavePolygonShape3D` pour éliminer tout risque de traversée.
     - Caméra orbitale `SpringArm3D` blindée avec un volume sphérique (`SphereShape3D` rayon 0.22, marge 0.25) interdisant toute pénétration du terrain.
-  - Validation headless réussie sans erreur.
+- [x] **Étape 10 : Petits Cubes Style Cube World & Greedy Meshing (Phase 1)**
+  - **Constante Globale `VOXEL_SIZE`** ([`voxel_constants.gd`](file:///Z:/scripts/world/voxel_constants.gd)) :
+    - Valeur par défaut fixée à `0.5` mètre (soit 2 blocs par mètre).
+    - Métriques dérivées automatiques : `CHUNK_WIDTH = 32`, `CHUNK_DEPTH = 32`, `CHUNK_HEIGHT = 256`, `SEA_LEVEL = 64`.
+    - Fonctions utilitaires statiques `world_to_block`, `block_to_world`, `world_to_chunk_coords`, `chunk_coords_to_world_pos` utilisées dans tout le moteur.
+    - Préservation rigoureuse de la taille du monde en mètres (taille physique de chunk 16x16m, niveau de la mer à 32m).
+  - **Greedy Meshing 3D Multithreadé** ([`chunk.gd`](file:///Z:/scripts/world/chunk.gd)) :
+    - Balayage glouton tranche par tranche sur les 6 directions de faces.
+    - Fusion optimale des faces coplanaires adjacentes partageant le même type de bloc et les mêmes 4 niveaux d'Ambient Occlusion (AO).
+    - Culling intégral des faces internes cachées et suppression de la face de fond à `y=0`.
+    - Réduction massive du nombre de sommets et de draw calls (plus de 65% de quads fusionnés).
+  - **Décors Procéduraux Haute Fidélité** ([`decor_generator.gd`](file:///Z:/scripts/world/decor_generator.gd)) :
+    - Chênes et bouleaux avec troncs 2x2 blocs et canopées sphériques volumétriques denses.
+    - Pins coniques à plusieurs étages de branchages étagés.
+    - Cactus 3D avec bras secondaires en relief.
+    - Rochers arrondis procéduraux et parterres floraux via `MultiMeshInstance3D`.
+  - **Modèles Entités Reconstruits & Step-Up Automatique** :
+    - Personnage joueur détaillé avec yeux articulés (pupilles + blanc), chevelure sculptée, col de tunique, ceinture en cuir à boucle dorée et cape réactive.
+    - Ennemis et compagnons remodelés en petits voxels tout en conservant leurs hitboxes métriques d'origine.
+    - Montée automatique des dénivelés de 1 à 2 petits cubes (`_snap_step_up`) sur le joueur, les ennemis et les familiers (jusqu'à 1.05m sans sauter).
+  - **Outils F3 & Gestion de Sauvegarde v4** :
+    - Panneau F3 affichant : `VOXEL_SIZE`, FPS, triangles totaux, chunks chargés, temps moyen de calcul (ms), seed et coordonnées.
+    - Détection de version de sauvegarde (v4) avec invitation sécurisée à démarrer une nouvelle aventure lors d'un changement de granularité.
+  - **Guide de Réglage de `VOXEL_SIZE` (0.5, 0.33, 0.25)** :
+    - Modifier `VOXEL_SIZE` dans [`voxel_constants.gd`](file:///Z:/scripts/world/voxel_constants.gd) :
+      - Pour `0.50` : `CHUNK_WIDTH = 32`, `CHUNK_DEPTH = 32`, `CHUNK_HEIGHT = 256`, `SEA_LEVEL = 64`.
+      - Pour `0.33` (1/3m) : `CHUNK_WIDTH = 48`, `CHUNK_DEPTH = 48`, `CHUNK_HEIGHT = 384`, `SEA_LEVEL = 96`.
+      - Pour `0.25` (1/4m) : `CHUNK_WIDTH = 64`, `CHUNK_DEPTH = 64`, `CHUNK_HEIGHT = 512`, `SEA_LEVEL = 128`.
+    - Les dimensions en mètres (`CHUNK_SIZE_METERS`, `BASE_HEIGHT_METERS`, etc.) restent automatiquement constantes.
+    - Le franchissement de marche s'adapte automatiquement grâce à `2.0 * VOXEL_SIZE + 0.05`.
+
+- [x] **Étape 11 : Passe Visuelle Complète & Shaders Procéduraux (Phase 2)**
+  - **Éclairage & Post-Processing Haute Qualité** ([`Main.tscn`](file:///Z:/scenes/Main.tscn)) :
+    - `WorldEnvironment` avec tonemapper cinématique ACES (mode 3), exposition ajustée à 1.05.
+    - SSAO activé (rayon 1.6m, intensité 2.0, power 1.5) créant une occlusion ambiante réaliste dans les creux des blocs voxels.
+    - Glow subtil (intensité 0.5, bloom 0.12) illuminant doucement le soleil, les feux et les magies.
+    - Étalonnage des couleurs : contraste relevé à 1.1, saturation à 1.2 pour un rendu vibrant typique des RPG colorés.
+    - Brouillard atmosphérique avec aerial perspective et liaison chromatique continue avec l'horizon du ciel.
+  - **Palette Vibrante & Micro-Variation Déterministe** ([`terrain.gdshader`](file:///Z:/shaders/terrain.gdshader)) :
+    - Palette de biomes revigorée dans [`block_types.gd`](file:///Z:/scripts/world/block_types.gd) : herbe vert émeraude, sable chaud et doré, neige crispée blanc-bleutée, pierre gris-brun chaude.
+    - Variation aléatoire de teinte et de luminosité (±5%) par bloc calculée sur GPU via une fonction de hachage de la position mondiale, préservant ainsi la fusion optimale du greedy meshing sur CPU.
+    - Ondulation au vent sur la végétation (feuilles d'arbres, herbes, fleurs) animée par le vertex shader.
+  - **Ciel Procédural & Nuages Dérivants** ([`sky.gdshader`](file:///Z:/shaders/sky.gdshader), [`day_night_cycle.gd`](file:///Z:/scripts/world/day_night_cycle.gd)) :
+    - Dégradé céleste dynamique s'adaptant à l'heure du jour (aube dorée, plein jour azur, crépuscule flamboyant, nuit d'encre).
+    - Disque et halo solaire brillants orientés selon la position réelle de la lumière du soleil.
+    - Nuages procéduraux dérivants animés par un bruit FBM au-dessus de l'horizon avec éclairage teinté au coucher du soleil.
+  - **Shader d'Eau Semi-Transparente & Ségrégation de Surface** ([`water.gdshader`](file:///Z:/shaders/water.gdshader), [`chunk.gd`](file:///Z:/scripts/world/chunk.gd)) :
+    - Gradient de couleur selon la profondeur réelle via le tampon de profondeur GPU (`hint_depth_texture`).
+    - Houle animée à deux ondes sinusoïdales croisées.
+    - Liseré d'écume blanche dynamique sur les berges et rivages sablonneux.
+    - Maillage d'eau isolé sur une surface dédiée sans ombres portées, éliminant tout artefact de tri ou de collision.
+  - **Ombres Directionnelles PSSM & Contour Fresnel des Entités** ([`fresnel_character.gdshader`](file:///Z:/shaders/fresnel_character.gdshader)) :
+    - Ombres du soleil projetées avec 4 découpages en cascade (PSSM 4 splits) jusqu'à 140 mètres.
+    - Effet de contour lumineux Fresnel subtil sur le joueur, les 4 types d'ennemis et les 24 familiers, rehaussant leur silhouette par rapport au décor voxel.
+  - Validation headless réussie (Code de sortie 0).
+
 

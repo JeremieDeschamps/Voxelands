@@ -3,6 +3,8 @@ extends CanvasLayer
 
 ## Menu Pause (Touche Echap) et panneau complet de réglages (Distance de rendu, Volume, Ombres, Brouillard, FPS).
 
+const VoxelConstants = preload("res://scripts/world/voxel_constants.gd")
+
 signal game_resumed
 signal return_to_main_menu
 
@@ -284,7 +286,7 @@ func _on_quit_pressed() -> void:
 
 func _on_render_dist_changed(val: float) -> void:
 	var dist: int = int(val)
-	render_dist_label.text = "Distance de rendu : %d chunks (%d blocs)" % [dist, dist * 16]
+	render_dist_label.text = "Distance de rendu : %d chunks (%dm)" % [dist, int(dist * VoxelConstants.CHUNK_SIZE_METERS)]
 	if world_ref != null and ("render_distance" in world_ref):
 		world_ref.render_distance = dist
 		if world_ref.has_method("_update_chunks_around_target"):

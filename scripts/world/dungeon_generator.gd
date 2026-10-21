@@ -8,6 +8,7 @@ const TreasureChest = preload("res://scripts/items/treasure_chest.gd")
 const DungeonBoss = preload("res://scripts/enemies/dungeon_boss.gd")
 const SkeletonEnemy = preload("res://scripts/enemies/skeleton.gd")
 const GolemEnemy = preload("res://scripts/enemies/golem.gd")
+const VoxelConstants = preload("res://scripts/world/voxel_constants.gd")
 
 const DUNGEON_REGION_SIZE: int = 160
 const SUBTERRANEAN_Y: float = 12.0
@@ -57,8 +58,10 @@ func get_dungeon_info_for_region(rx: int, rz: int) -> Dictionary:
 	var dx: int = rx * DUNGEON_REGION_SIZE + int(local_x)
 	var dz: int = rz * DUNGEON_REGION_SIZE + int(local_z)
 
-	var h: int = Chunk.get_height_at(terrain_noise, dx, dz)
-	if h < Chunk.SEA_LEVEL + 1:
+	var bpos := VoxelConstants.world_to_block_2d(float(dx), float(dz))
+	var h_vox: int = Chunk.get_height_at(terrain_noise, bpos.x, bpos.y)
+	var h_m: float = float(h_vox) * VoxelConstants.VOXEL_SIZE
+	if h_m < VoxelConstants.SEA_LEVEL_METERS + 1.0:
 		return {}
 
 	var d_names: Array[String] = ["Crypte d'Ossements", "Catacombes de l'Ombre", "Donjon des Âmes", "Gouffre Maudit"]
@@ -67,7 +70,7 @@ func get_dungeon_info_for_region(rx: int, rz: int) -> Dictionary:
 	return {
 		"id": "dungeon_%d_%d" % [rx, rz],
 		"region": Vector2i(rx, rz),
-		"surface_position": Vector3(float(dx), float(h), float(dz)),
+		"surface_position": Vector3(float(dx), h_m, float(dz)),
 		"subterranean_position": Vector3(float(dx), SUBTERRANEAN_Y, float(dz)),
 		"name": d_name
 	}

@@ -1,32 +1,38 @@
-[gd_scene load_steps=6 format=3 uid="uid://voxelands_main_scene_01"]
+[gd_scene load_steps=7 format=3 uid="uid://voxelands_main_scene_01"]
 
 [ext_resource type="Script" path="res://scripts/world/world.gd" id="1_world"]
 [ext_resource type="PackedScene" path="res://scenes/Player.tscn" id="2_player"]
 [ext_resource type="Script" path="res://scripts/enemies/enemy_spawner.gd" id="3_spawner"]
 [ext_resource type="Script" path="res://scripts/world/day_night_cycle.gd" id="4_cycle"]
+[ext_resource type="Shader" path="res://shaders/sky.gdshader" id="5_sky_shader"]
 
-[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_sky"]
-sky_top_color = Color(0.35, 0.65, 0.95, 1)
-sky_horizon_color = Color(0.68, 0.82, 0.95, 1)
-sky_curve = 0.15
-ground_bottom_color = Color(0.2, 0.18, 0.15, 1)
-ground_horizon_color = Color(0.68, 0.82, 0.95, 1)
-ground_curve = 0.02
-sun_angle_max = 30.0
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_sky"]
+shader = ExtResource("5_sky_shader")
 
 [sub_resource type="Sky" id="Sky_main"]
-sky_material = SubResource("ProceduralSkyMaterial_sky")
+sky_material = SubResource("ShaderMaterial_sky")
 
 [sub_resource type="Environment" id="Environment_main"]
 background_mode = 2
 sky = SubResource("Sky_main")
-tonemap_mode = 2
+tonemap_mode = 3
+tonemap_exposure = 1.05
+ssao_enabled = true
+ssao_radius = 1.6
+ssao_intensity = 2.0
+ssao_power = 1.5
 glow_enabled = true
+glow_intensity = 0.5
+glow_bloom = 0.12
+adjustment_enabled = true
+adjustment_contrast = 1.1
+adjustment_saturation = 1.2
 fog_enabled = true
 fog_light_color = Color(0.68, 0.82, 0.95, 1)
-fog_density = 0.005
-fog_aerial_perspective = 0.4
-fog_sky_affect = 0.5
+fog_density = 0.0035
+fog_aerial_perspective = 0.5
+fog_sky_affect = 0.6
+fog_sun_scatter = 0.25
 
 [node name="Main" type="Node3D"]
 
@@ -36,6 +42,14 @@ environment = SubResource("Environment_main")
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="." groups=["sun_light"]]
 transform = Transform3D(-0.866025, -0.353553, 0.353553, 0, 0.707107, 0.707107, -0.5, 0.612372, -0.612372, 0, 80, 0)
 shadow_enabled = true
+directional_shadow_mode = 2
+directional_shadow_split_1 = 0.08
+directional_shadow_split_2 = 0.2
+directional_shadow_split_3 = 0.45
+directional_shadow_blend_splits = true
+directional_shadow_max_distance = 140.0
+shadow_bias = 0.03
+shadow_normal_bias = 1.0
 
 [node name="Player" parent="." instance=ExtResource("2_player")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 50, 0)

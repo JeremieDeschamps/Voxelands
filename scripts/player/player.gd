@@ -22,6 +22,7 @@ const CompanionData = preload("res://scripts/player/companion_data.gd")
 const SoundGenerator = preload("res://scripts/audio/sound_generator.gd")
 const PauseMenuUI = preload("res://scripts/ui/pause_menu_ui.gd")
 const MainMenuUI = preload("res://scripts/ui/main_menu_ui.gd")
+const VoxelConstants = preload("res://scripts/world/voxel_constants.gd")
 
 # Caractéristiques physiques
 @export var walk_speed: float = 6.0
@@ -121,21 +122,18 @@ func _get_chunk_at_coords(chunk_coords: Vector2i) -> Chunk:
 
 
 func _get_block_type_at(world_pos: Vector3) -> int:
-	var bx: int = int(floor(world_pos.x))
-	var by: int = int(floor(world_pos.y))
-	var bz: int = int(floor(world_pos.z))
-	if by < 0 or by >= Chunk.CHUNK_HEIGHT:
+	var bpos: Vector3i = VoxelConstants.world_to_block(world_pos)
+	if bpos.y < 0 or bpos.y >= VoxelConstants.CHUNK_HEIGHT:
 		return 0 # Air
 
-	var cx: int = int(floor(float(bx) / float(Chunk.CHUNK_WIDTH)))
-	var cz: int = int(floor(float(bz) / float(Chunk.CHUNK_DEPTH)))
-	var chunk: Chunk = _get_chunk_at_coords(Vector2i(cx, cz))
+	var cur_chunk: Vector2i = VoxelConstants.world_to_chunk_coords(world_pos)
+	var chunk: Chunk = _get_chunk_at_coords(cur_chunk)
 	if chunk == null or chunk.voxels.is_empty():
 		return 0
 
-	var lx: int = posmod(bx, Chunk.CHUNK_WIDTH)
-	var lz: int = posmod(bz, Chunk.CHUNK_DEPTH)
-	var idx: int = Chunk.get_voxel_index(lx, by, lz)
+	var lx: int = posmod(bpos.x, VoxelConstants.CHUNK_WIDTH)
+	var lz: int = posmod(bpos.z, VoxelConstants.CHUNK_DEPTH)
+	var idx: int = Chunk.get_voxel_index(lx, bpos.y, lz)
 	if idx >= 0 and idx < chunk.voxels.size():
 		return chunk.voxels[idx]
 	return 0
@@ -206,13 +204,15 @@ func _find_and_spawn_on_dry_land() -> void:
 
 	# Tester jusqu'à 60 positions aléatoires
 	for attempt in range(60):
-		var test_x: int = randi_range(-250, 250)
-		var test_z: int = randi_range(-250, 250)
-		var h: int = Chunk.get_height_at(world.terrain_noise, test_x, test_z)
-		# Terre ferme : au-dessus de l'eau (> 34) et hors haute montagne (< 54)
-		if h > Chunk.SEA_LEVEL + 2 and h < 54:
-			chosen_x = float(test_x)
-			chosen_z = float(test_z)
+		var test_x: float = float(randi_range(-250, 250))
+		var test_z: float = float(randi_range(-250, 250))
+		var bpos := VoxelConstants.world_to_block_2d(test_x, test_z)
+		var h_voxels: int = Chunk.get_height_at(world.terrain_noise, bpos.x, bpos.y)
+		var h_m: float = float(h_voxels) * VoxelConstants.VOXEL_SIZE
+		# Terre ferme : au-dessus de l'eau (> 34m) et hors haute montagne (< 54m)
+		if h_m > VoxelConstants.SEA_LEVEL_METERS + 2.0 and h_m < 54.0:
+			chosen_x = test_x
+			chosen_z = test_z
 			found_valid = true
 			break
 
@@ -220,7 +220,9 @@ func _find_and_spawn_on_dry_land() -> void:
 		chosen_x = 0.0
 		chosen_z = 0.0
 
-	var surface_y: float = float(Chunk.get_height_at(world.terrain_noise, int(round(chosen_x)), int(round(chosen_z))))
+	var bpos2 := VoxelConstants.world_to_block_2d(chosen_x, chosen_z)
+	var surf_vox: int = Chunk.get_height_at(world.terrain_noise, bpos2.x, bpos2.y)
+	var surface_y: float = float(surf_vox) * VoxelConstants.VOXEL_SIZE
 	global_position = Vector3(chosen_x, surface_y + 3.0, chosen_z)
 	velocity = Vector3.ZERO
 	is_terrain_ready = false
@@ -424,21 +426,23 @@ func _process(_delta: float) -> void:
 	if is_debug_open and debug_label != null:
 		var world = get_node_or_null("../World")
 		var w_seed: int = world.world_seed if world != null else 0
-		var px: int = int(round(global_position.x))
-		var pz: int = int(round(global_position.z))
-		var surf_h: float = float(Chunk.get_height_at(world.terrain_noise, px, pz)) if (world != null and world.terrain_noise != null) else 0.0
-		var cur_chunk := Vector2i(
-			int(floor(float(px) / float(Chunk.CHUNK_WIDTH))),
-			int(floor(float(pz) / float(Chunk.CHUNK_DEPTH)))
-		)
+		var chunk_count: int = world.active_chunks.size() if world != null else 0
+		var total_tris: int = world.total_triangles if world != null else 0
+		var avg_time: float = world.avg_chunk_time_ms if world != null else 0.0
+		var fps: int = int(Engine.get_frames_per_second())
+
+		var bpos := VoxelConstants.world_to_block(global_position)
+		var surf_vox: int = Chunk.get_height_at(world.terrain_noise, bpos.x, bpos.z) if (world != null and world.terrain_noise != null) else 0
+		var surf_h: float = float(surf_vox) * VoxelConstants.VOXEL_SIZE
+		var cur_chunk: Vector2i = VoxelConstants.world_to_chunk_coords(global_position)
+
 		debug_label.text = "🔧 [F3] VOXELANDS DEBUG\n" \
-			+ "• Graine (Seed) : %d\n" % w_seed \
-			+ "• Position : (%.1f, %.1f, %.1f)\n" % [global_position.x, global_position.y, global_position.z] \
-			+ "• Hauteur surface : %.1f (Écart : %+.1fm)\n" % [surf_h, global_position.y - surf_h] \
-			+ "• Chunk actuel : (%d, %d)\n" % [cur_chunk.x, cur_chunk.y] \
-			+ "• Au sol : %s | Au mur : %s\n" % [str(is_on_floor()), str(is_on_wall())] \
-			+ "• Vélocité : (%.1f, %.1f, %.1f)\n" % [velocity.x, velocity.y, velocity.z] \
-			+ "• Mode Vol (Noclip) : %s [F5]\n" % ("ACTIF" if is_noclip else "INACTIF") \
+			+ "• VOXEL_SIZE : %.2fm (1m = %d voxels)\n" % [VoxelConstants.VOXEL_SIZE, int(round(1.0 / VoxelConstants.VOXEL_SIZE))] \
+			+ "• FPS : %d | Triangles : %s\n" % [fps, String.num_int64(total_tris)] \
+			+ "• Chunks chargés : %d | Temps gén. moy : %.1f ms\n" % [chunk_count, avg_time] \
+			+ "• Graine : %d | Chunk : (%d, %d)\n" % [w_seed, cur_chunk.x, cur_chunk.y] \
+			+ "• Position : (%.1f, %.1f, %.1f) | Surface : %.1f (Écart %+.1fm)\n" % [global_position.x, global_position.y, global_position.z, surf_h, global_position.y - surf_h] \
+			+ "• Au sol : %s | Mode Vol (Noclip) : %s [F5]\n" % [str(is_on_floor()), "ACTIF" if is_noclip else "INACTIF"] \
 			+ "• Touches : F4=Haut +20m | F5=Noclip | F6=Nouvelle Seed"
 
 
@@ -454,7 +458,9 @@ func _input(event: InputEvent) -> void:
 			var world = get_node_or_null("../World")
 			var surf_h: float = 38.0
 			if world != null and world.terrain_noise != null:
-				surf_h = float(Chunk.get_height_at(world.terrain_noise, int(round(global_position.x)), int(round(global_position.z))))
+				var bpos := VoxelConstants.world_to_block(global_position)
+				var sv: int = Chunk.get_height_at(world.terrain_noise, bpos.x, bpos.z)
+				surf_h = float(sv) * VoxelConstants.VOXEL_SIZE
 			global_position.y = surf_h + 20.0
 			velocity = Vector3.ZERO
 			return
@@ -703,28 +709,27 @@ func _physics_process(delta: float) -> void:
 		return
 
 	# 1. Attente active de la présence physique du chunk sous le joueur
-	var px: int = int(floor(global_position.x))
-	var pz: int = int(floor(global_position.z))
+	var bpos := VoxelConstants.world_to_block(global_position)
 	var world = get_node_or_null("../World")
-	var surface_y: int = 38
+	var surface_y: float = 38.0
 	if world != null and world.terrain_noise != null:
-		surface_y = Chunk.get_height_at(world.terrain_noise, px, pz)
+		var sv: int = Chunk.get_height_at(world.terrain_noise, bpos.x, bpos.z)
+		surface_y = float(sv) * VoxelConstants.VOXEL_SIZE
 
 	if not is_terrain_ready:
 		velocity = Vector3.ZERO # Gravité désactivée tant que le terrain n'est pas matérialisé
-		var cx: int = int(floor(float(px) / float(Chunk.CHUNK_WIDTH)))
-		var cz: int = int(floor(float(pz) / float(Chunk.CHUNK_DEPTH)))
-		var chunk: Chunk = _get_chunk_at_coords(Vector2i(cx, cz))
+		var cur_chunk: Vector2i = VoxelConstants.world_to_chunk_coords(global_position)
+		var chunk: Chunk = _get_chunk_at_coords(cur_chunk)
 		if chunk != null and chunk.collision_shape != null and chunk.collision_shape.is_inside_tree() and chunk.collision_shape.shape != null:
-			global_position.y = float(surface_y) + 3.0
+			global_position.y = surface_y + 3.0
 			velocity = Vector3.ZERO
 			is_terrain_ready = true
 		else:
 			return # Attente du thread sans chute ni gravité
 
 	# 2. Sécurité automatique : si le joueur tombe sous le terrain ou le fond du monde
-	if global_position.y < float(surface_y) - 2.0 or global_position.y < 2.0:
-		global_position.y = float(surface_y) + 3.0
+	if global_position.y < surface_y - 2.0 or global_position.y < 2.0:
+		global_position.y = surface_y + 3.0
 		velocity = Vector3.ZERO
 
 	# Réduction des cooldowns
@@ -739,7 +744,7 @@ func _physics_process(delta: float) -> void:
 		if character_model != null:
 			character_model.visible = true
 
-	var water_surface_y: float = float(Chunk.SEA_LEVEL) + 0.5
+	var water_surface_y: float = VoxelConstants.SEA_LEVEL_METERS + 0.5
 	is_swimming = (global_position.y <= water_surface_y)
 
 	# 4. Gestion stricte du planeur : actif UNIQUEMENT en l'air ET si Espace est maintenu
@@ -815,6 +820,9 @@ func _physics_process(delta: float) -> void:
 		velocity.x = move_toward(velocity.x, 0.0, target_speed * delta * 8.0)
 		velocity.z = move_toward(velocity.z, 0.0, target_speed * delta * 8.0)
 
+	# Montée automatique des dénivelés d'un ou deux petits blocs sans sauter (Step-climb)
+	_snap_step_up(delta)
+
 	move_and_slide()
 
 	var horizontal_speed: float = Vector2(velocity.x, velocity.z).length()
@@ -836,6 +844,34 @@ func _physics_process(delta: float) -> void:
 		hud.update_stamina(current_stamina, get_effective_max_stamina())
 		hud.update_skill_cooldowns(skill_cooldowns, skill_max_cooldowns)
 		_update_hud_navigation()
+
+
+## Montée automatique des marches et dénivelés d'1 à 2 petits blocs (Step-climb)
+func _snap_step_up(delta: float) -> void:
+	if not is_on_floor() or is_gliding or is_swimming:
+		return
+	var horiz_vel := Vector3(velocity.x, 0.0, velocity.z)
+	if horiz_vel.length_squared() < 0.1:
+		return
+
+	var max_step: float = 2.0 * VoxelConstants.VOXEL_SIZE + 0.05
+	var motion := horiz_vel * delta
+
+	# Collision frontale détectée
+	if test_move(global_transform, motion):
+		var up_step := Vector3(0.0, max_step, 0.0)
+		# Vérifier l'espace libre au-dessus
+		if not test_move(global_transform, up_step):
+			var step_tr := global_transform.translated(up_step)
+			# Vérifier l'espace libre pour avancer au-dessus de la marche
+			if not test_move(step_tr, motion):
+				# Trouver le sol de la marche
+				var down_test := Vector3(0.0, -max_step - 0.05, 0.0)
+				var hit := KinematicCollision3D.new()
+				if test_move(step_tr.translated(motion), down_test, hit):
+					var actual_step: float = max_step + hit.get_travel().y
+					if actual_step > 0.04 and actual_step <= max_step:
+						global_position.y += actual_step
 
 
 func add_xp(amount: int) -> void:

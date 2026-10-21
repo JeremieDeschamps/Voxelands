@@ -35,10 +35,20 @@ func _create_stone_cube(size: Vector3, color: Color) -> MeshInstance3D:
 	var inst := MeshInstance3D.new()
 	var box := BoxMesh.new()
 	box.size = size
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = color
-	mat.roughness = 0.95
-	box.material = mat
+	var fresnel_shader = load("res://shaders/fresnel_character.gdshader")
+	if fresnel_shader != null:
+		var sm := ShaderMaterial.new()
+		sm.shader = fresnel_shader
+		sm.set_shader_parameter("albedo_color", color)
+		sm.set_shader_parameter("fresnel_color", Color(0.2, 0.85, 0.95, 1.0)) # Reflet cyan runique
+		sm.set_shader_parameter("fresnel_intensity", 0.32)
+		sm.set_shader_parameter("roughness", 0.92)
+		box.material = sm
+	else:
+		var mat := StandardMaterial3D.new()
+		mat.albedo_color = color
+		mat.roughness = 0.95
+		box.material = mat
 	inst.mesh = box
 	return inst
 

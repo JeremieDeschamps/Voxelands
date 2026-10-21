@@ -37,29 +37,29 @@ enum Biome {
 	MOUNTAIN = 6,
 }
 
-# Palettes de couleurs par vertex
-const COLOR_DIRT := Color(0.44, 0.31, 0.20)
-const COLOR_GRASS_TOP := Color(0.36, 0.72, 0.22)
-const COLOR_GRASS_SIDE := Color(0.42, 0.46, 0.22)
-const COLOR_FOREST_GRASS_TOP := Color(0.22, 0.56, 0.18)
-const COLOR_FOREST_GRASS_SIDE := Color(0.35, 0.42, 0.18)
-const COLOR_STONE := Color(0.54, 0.55, 0.58)
-const COLOR_SAND := Color(0.88, 0.80, 0.52)
-const COLOR_SANDSTONE := Color(0.76, 0.68, 0.42)
-const COLOR_WATER := Color(0.20, 0.48, 0.82, 0.85)
-const COLOR_WOOD := Color(0.38, 0.26, 0.16)
-const COLOR_LEAVES := Color(0.18, 0.55, 0.16)
-const COLOR_SNOW := Color(0.94, 0.96, 0.98)
-const COLOR_SNOW_DIRT_SIDE := Color(0.65, 0.60, 0.55)
-const COLOR_CACTUS := Color(0.26, 0.58, 0.24)
-const COLOR_PINE_WOOD := Color(0.28, 0.18, 0.12)
-const COLOR_PINE_LEAVES := Color(0.12, 0.36, 0.18)
-const COLOR_BIRCH_WOOD := Color(0.88, 0.88, 0.85)
-const COLOR_ROCK := Color(0.38, 0.39, 0.42)
-const COLOR_FLOWER_RED := Color(0.92, 0.22, 0.22)
-const COLOR_FLOWER_YELLOW := Color(0.96, 0.86, 0.16)
-const COLOR_TALL_GRASS := Color(0.40, 0.75, 0.24)
-const COLOR_DRY_SHRUB := Color(0.68, 0.58, 0.35)
+# Palettes de couleurs par vertex (style RPG voxel vif et saturé)
+const COLOR_DIRT := Color(0.46, 0.30, 0.18)
+const COLOR_GRASS_TOP := Color(0.24, 0.78, 0.20)         # Vert vif prairie
+const COLOR_GRASS_SIDE := Color(0.38, 0.55, 0.22)
+const COLOR_FOREST_GRASS_TOP := Color(0.16, 0.64, 0.18)  # Vert émeraude forêt
+const COLOR_FOREST_GRASS_SIDE := Color(0.32, 0.48, 0.18)
+const COLOR_STONE := Color(0.50, 0.46, 0.42)             # Roche gris-brun chaude
+const COLOR_SAND := Color(0.96, 0.84, 0.46)              # Sable chaud doré
+const COLOR_SANDSTONE := Color(0.85, 0.72, 0.38)
+const COLOR_WATER := Color(0.12, 0.52, 0.90, 0.78)
+const COLOR_WOOD := Color(0.40, 0.24, 0.14)
+const COLOR_LEAVES := Color(0.20, 0.68, 0.18)
+const COLOR_SNOW := Color(0.90, 0.95, 1.0)               # Neige blanc-bleuté
+const COLOR_SNOW_DIRT_SIDE := Color(0.68, 0.62, 0.58)
+const COLOR_CACTUS := Color(0.22, 0.66, 0.22)
+const COLOR_PINE_WOOD := Color(0.26, 0.16, 0.10)
+const COLOR_PINE_LEAVES := Color(0.10, 0.42, 0.22)
+const COLOR_BIRCH_WOOD := Color(0.92, 0.90, 0.86)
+const COLOR_ROCK := Color(0.42, 0.38, 0.36)              # Roche gris-brun
+const COLOR_FLOWER_RED := Color(0.96, 0.18, 0.18)
+const COLOR_FLOWER_YELLOW := Color(1.0, 0.88, 0.12)
+const COLOR_TALL_GRASS := Color(0.28, 0.78, 0.22)
+const COLOR_DRY_SHRUB := Color(0.72, 0.58, 0.32)
 
 ## Indique si le bloc est opaque pour le culling des faces adjacentes
 static func is_opaque(block_type: int) -> bool:

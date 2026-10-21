@@ -5,6 +5,7 @@ extends CanvasLayer
 
 const Chunk = preload("res://scripts/world/chunk.gd")
 const BlockTypes = preload("res://scripts/world/block_types.gd")
+const VoxelConstants = preload("res://scripts/world/voxel_constants.gd")
 
 var is_open: bool = false
 var player_ref: CharacterBody3D = null
@@ -223,12 +224,13 @@ func _render_map_image(center: Vector2) -> void:
 
 	for py in range(MAP_PIXELS):
 		for px in range(MAP_PIXELS):
-			var world_x: int = int(round(center.x + (float(px) - half_pix) * MAP_SCALE_BLOCKS))
-			var world_z: int = int(round(center.y + (float(py) - half_pix) * MAP_SCALE_BLOCKS))
+			var wx_m: float = center.x + (float(px) - half_pix) * MAP_SCALE_BLOCKS
+			var wz_m: float = center.y + (float(py) - half_pix) * MAP_SCALE_BLOCKS
+			var bpos := VoxelConstants.world_to_block_2d(wx_m, wz_m)
 
-			var h: int = Chunk.get_height_at(t_noise, world_x, world_z)
-			var temp: float = temp_noise.get_noise_2d(float(world_x), float(world_z))
-			var hum: float = hum_noise.get_noise_2d(float(world_x), float(world_z))
+			var h: int = Chunk.get_height_at(t_noise, bpos.x, bpos.y)
+			var temp: float = temp_noise.get_noise_2d(wx_m, wz_m)
+			var hum: float = hum_noise.get_noise_2d(wx_m, wz_m)
 			var biome: int = Chunk.get_biome_at(temp, hum, h)
 
 			var col: Color = _get_color_for_biome(biome, h)
@@ -239,9 +241,10 @@ func _render_map_image(center: Vector2) -> void:
 
 
 func _get_color_for_biome(biome: int, height: int) -> Color:
-	if height <= Chunk.SEA_LEVEL:
+	var h_m: float = float(height) * VoxelConstants.VOXEL_SIZE
+	if h_m <= VoxelConstants.SEA_LEVEL_METERS:
 		return Color(0.20, 0.45, 0.85) # Océan
-	if height <= Chunk.SEA_LEVEL + 2:
+	if h_m <= VoxelConstants.SEA_LEVEL_METERS + 2.0:
 		return Color(0.88, 0.80, 0.52) # Plage
 
 	match biome:
@@ -264,7 +267,8 @@ func _get_current_biome_name(wx: int, wz: int) -> String:
 	var temp_noise: FastNoiseLite = world_ref.temperature_noise
 	var hum_noise: FastNoiseLite = world_ref.humidity_noise
 
-	var h: int = Chunk.get_height_at(t_noise, wx, wz)
+	var bpos := VoxelConstants.world_to_block_2d(float(wx), float(wz))
+	var h: int = Chunk.get_height_at(t_noise, bpos.x, bpos.y)
 	var temp: float = temp_noise.get_noise_2d(float(wx), float(wz))
 	var hum: float = hum_noise.get_noise_2d(float(wx), float(wz))
 	var biome: int = Chunk.get_biome_at(temp, hum, h)

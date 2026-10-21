@@ -13,6 +13,8 @@
 !/scripts/**
 !/scenes/
 !/scenes/**
+!/shaders/
+!/shaders/**
 
 # Fichiers internes et cache de Godot
 .godot/

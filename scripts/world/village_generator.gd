@@ -6,6 +6,7 @@ extends Node3D
 const BlockTypes = preload("res://scripts/world/block_types.gd")
 const VillageNPC = preload("res://scripts/world/village_npc.gd")
 const Chunk = preload("res://scripts/world/chunk.gd")
+const VoxelConstants = preload("res://scripts/world/voxel_constants.gd")
 
 const REGION_SIZE: int = 120 # Espacement moyen des villages en blocs
 
@@ -61,14 +62,16 @@ func get_village_info_for_region(rx: int, rz: int) -> Dictionary:
 	var vx: int = rx * REGION_SIZE + int(local_x)
 	var vz: int = rz * REGION_SIZE + int(local_z)
 
-	var h: int = Chunk.get_height_at(terrain_noise, vx, vz)
+	var bpos := VoxelConstants.world_to_block_2d(float(vx), float(vz))
+	var h_vox: int = Chunk.get_height_at(terrain_noise, bpos.x, bpos.y)
+	var h_m: float = float(h_vox) * VoxelConstants.VOXEL_SIZE
 	# Ne pas générer au fond de l'océan
-	if h < Chunk.SEA_LEVEL - 1:
+	if h_m < VoxelConstants.SEA_LEVEL_METERS - 1.0:
 		return {}
 
 	var temp: float = temperature_noise.get_noise_2d(float(vx), float(vz))
 	var hum: float = humidity_noise.get_noise_2d(float(vx), float(vz))
-	var biome: int = Chunk.get_biome_at(temp, hum, h)
+	var biome: int = Chunk.get_biome_at(temp, hum, h_vox)
 
 	var v_names: Array[String] = ["Oakhaven", "Sable-d'Or", "Givrecime", "Roc-Vaillant", "Port-Azul", "Brumeval", "Soléria"]
 	var v_name: String = v_names[posmod(hash_val, v_names.size())]
@@ -76,7 +79,7 @@ func get_village_info_for_region(rx: int, rz: int) -> Dictionary:
 	return {
 		"id": "village_%d_%d" % [rx, rz],
 		"region": Vector2i(rx, rz),
-		"position": Vector3(float(vx), float(h), float(vz)),
+		"position": Vector3(float(vx), h_m, float(vz)),
 		"biome": biome,
 		"name": v_name
 	}
@@ -139,10 +142,12 @@ func _spawn_village(v_info: Dictionary) -> void:
 
 	for i in range(house_offsets.size()):
 		var off: Vector3 = house_offsets[i]
-		var world_x: int = int(root.position.x + off.x)
-		var world_z: int = int(root.position.z + off.z)
-		var terrain_y: int = Chunk.get_height_at(terrain_noise, world_x, world_z)
-		var local_y: float = float(terrain_y) - root.position.y
+		var world_x: float = root.position.x + off.x
+		var world_z: float = root.position.z + off.z
+		var bpos_h := VoxelConstants.world_to_block_2d(world_x, world_z)
+		var terrain_y_vox: int = Chunk.get_height_at(terrain_noise, bpos_h.x, bpos_h.y)
+		var terrain_y_m: float = float(terrain_y_vox) * VoxelConstants.VOXEL_SIZE
+		var local_y: float = terrain_y_m - root.position.y
 		_build_house(root, Vector3(off.x, local_y, off.z), biome, i)
 
 	# 3. PNJ du village

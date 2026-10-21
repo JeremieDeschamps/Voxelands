@@ -6,6 +6,7 @@ extends CharacterBody3D
 const CompanionData = preload("res://scripts/player/companion_data.gd")
 const DamageLabel3D = preload("res://scripts/ui/damage_label_3d.gd")
 const DeathParticles = preload("res://scripts/enemies/death_particles.gd")
+const VoxelConstants = preload("res://scripts/world/voxel_constants.gd")
 
 enum State {
 	WILD,
@@ -76,10 +77,20 @@ func _create_voxel_cube(size: Vector3, color: Color) -> MeshInstance3D:
 	var mesh_inst := MeshInstance3D.new()
 	var box := BoxMesh.new()
 	box.size = size
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = color
-	mat.roughness = 0.8
-	box.material = mat
+	var fresnel_shader = load("res://shaders/fresnel_character.gdshader")
+	if fresnel_shader != null:
+		var sm := ShaderMaterial.new()
+		sm.shader = fresnel_shader
+		sm.set_shader_parameter("albedo_color", color)
+		sm.set_shader_parameter("fresnel_color", Color(1.0, 1.0, 1.0, 1.0))
+		sm.set_shader_parameter("fresnel_intensity", 0.25)
+		sm.set_shader_parameter("roughness", 0.8)
+		box.material = sm
+	else:
+		var mat := StandardMaterial3D.new()
+		mat.albedo_color = color
+		mat.roughness = 0.8
+		box.material = mat
 	mesh_inst.mesh = box
 	return mesh_inst
 
@@ -253,6 +264,16 @@ func _physics_process(delta: float) -> void:
 		State.TAMED_STAY:
 			velocity.x = move_toward(velocity.x, 0.0, move_speed * delta * 5.0)
 			velocity.z = move_toward(velocity.z, 0.0, move_speed * delta * 5.0)
+
+	if is_on_floor():
+		var horiz := Vector3(velocity.x, 0.0, velocity.z)
+		if horiz.length_squared() > 0.1 and test_move(global_transform, horiz * delta):
+			var max_step: float = 2.0 * VoxelConstants.VOXEL_SIZE + 0.05
+			var up_step := Vector3(0.0, max_step, 0.0)
+			if not test_move(global_transform, up_step):
+				var step_tr := global_transform.translated(up_step)
+				if not test_move(step_tr, horiz * delta):
+					global_position.y += max_step * 0.5
 
 	move_and_slide()
 	_animate(delta)

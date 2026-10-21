@@ -4,6 +4,7 @@ extends RefCounted
 ## Système de sauvegarde et de chargement dans le fichier user://save.json.
 
 const SAVE_PATH: String = "user://save.json"
+const VoxelConstants = preload("res://scripts/world/voxel_constants.gd")
 
 
 ## Sauvegarde l'état du joueur, son niveau, sa classe, son arbre de talents et son inventaire
@@ -35,7 +36,8 @@ static func save_game(player: CharacterBody3D, world_seed: int) -> bool:
 		}
 
 	var save_data := {
-		"version": 3,
+		"version": VoxelConstants.SAVE_VERSION,
+		"voxel_size": VoxelConstants.VOXEL_SIZE,
 		"timestamp": Time.get_datetime_string_from_system(),
 		"world_seed": world_seed,
 		"player": {
@@ -65,6 +67,25 @@ static func save_game(player: CharacterBody3D, world_seed: int) -> bool:
 	return true
 
 
+## Vérifie si une sauvegarde compatible existe
+static func has_valid_save() -> bool:
+	if not FileAccess.file_exists(SAVE_PATH):
+		return false
+	var file := FileAccess.open(SAVE_PATH, FileAccess.READ)
+	if file == null:
+		return false
+	var content: String = file.get_as_text()
+	file.close()
+
+	var test_json := JSON.new()
+	if test_json.parse(content) != OK:
+		return false
+	var data: Dictionary = test_json.data
+	var save_ver: int = int(data.get("version", 0))
+	var saved_vs: float = float(data.get("voxel_size", 1.0))
+	return save_ver >= VoxelConstants.SAVE_VERSION and is_equal_approx(saved_vs, VoxelConstants.VOXEL_SIZE)
+
+
 ## Charge la sauvegarde existante et restaure les données du joueur
 static func load_game(player: CharacterBody3D) -> Dictionary:
 	if not FileAccess.file_exists(SAVE_PATH):
@@ -84,6 +105,11 @@ static func load_game(player: CharacterBody3D) -> Dictionary:
 		return {}
 
 	var data: Dictionary = test_json.data
+	var save_ver: int = int(data.get("version", 0))
+	var saved_vs: float = float(data.get("voxel_size", 1.0))
+	if save_ver < VoxelConstants.SAVE_VERSION or not is_equal_approx(saved_vs, VoxelConstants.VOXEL_SIZE):
+		print("Sauvegarde de version antérieure ou incompatible détectée. Nouvelle partie proposée.")
+		return {}
 	if player != null and is_instance_valid(player):
 		var p_data: Dictionary = data.get("player", {})
 		if "class" in p_data and player.has_method("set_player_class"):

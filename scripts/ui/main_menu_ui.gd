@@ -3,6 +3,9 @@ extends CanvasLayer
 
 ## Écran titre et Menu Principal de Voxelands avec Nouvelle Partie, Continuer, Réglages et Quitter.
 
+const VoxelConstants = preload("res://scripts/world/voxel_constants.gd")
+const SaveSystem = preload("res://scripts/player/save_system.gd")
+
 signal start_game_requested(is_new_game: bool, custom_seed: int)
 
 var is_open: bool = true
@@ -121,11 +124,16 @@ func _create_menu_btn(txt: String) -> Button:
 
 
 func _check_save_file() -> void:
-	var has_save: bool = FileAccess.file_exists("user://save.json")
+	var has_save: bool = SaveSystem.has_valid_save()
 	if continue_btn != null:
 		continue_btn.disabled = not has_save
 		if not has_save:
-			continue_btn.text = "⚔️ Continuer (Aucune sauvegarde)"
+			if FileAccess.file_exists("user://save.json"):
+				continue_btn.text = "⚔️ Continuer (Incompatible - v%d)" % VoxelConstants.SAVE_VERSION
+			else:
+				continue_btn.text = "⚔️ Continuer (Aucune sauvegarde)"
+		else:
+			continue_btn.text = "⚔️ Continuer l'Aventure"
 
 
 func _on_continue_pressed() -> void:
