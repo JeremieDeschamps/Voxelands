@@ -57,6 +57,7 @@ var current_stamina: float = 100.0
 
 # Références aux sous-noeuds
 var character_model: VoxelCharacter = null
+var col_shape: CollisionShape3D = null
 var camera_pivot: Node3D = null
 var spring_arm: SpringArm3D = null
 var camera: Camera3D = null
@@ -72,6 +73,12 @@ var sound_generator: SoundGenerator = null
 var pause_menu_ui: PauseMenuUI = null
 var main_menu_ui: MainMenuUI = null
 var footstep_timer: float = 0.0
+
+# Outils de débogage (F3, F5)
+var is_debug_open: bool = false
+var is_noclip: bool = false
+var debug_overlay: Panel = null
+var debug_label: Label = null
 
 # États du joueur
 var is_gliding: bool = false
@@ -154,21 +161,82 @@ func _ready() -> void:
 		main_menu_ui.open_main_menu()
 
 
-func _on_start_game_from_menu(is_new_game: bool) -> void:
+func _on_start_game_from_menu(is_new_game: bool, custom_seed: int = -1) -> void:
 	if is_new_game:
 		if FileAccess.file_exists("user://save.json"):
 			DirAccess.remove_absolute("user://save.json")
+		var seed_to_use: int = custom_seed if custom_seed >= 0 else int(randi() % 900000 + 100000)
+		var world = get_node_or_null("../World")
+		if world != null and world.has_method("reinitialize_world"):
+			world.reinitialize_world(seed_to_use)
+		_find_and_spawn_on_dry_land()
+		_save_current_game()
 		class_select_ui.open_selection()
 	else:
 		var saved_data: Dictionary = SaveSystem.load_game(self)
 		if saved_data.is_empty():
+			var seed_to_use: int = custom_seed if custom_seed >= 0 else int(randi() % 900000 + 100000)
+			var world = get_node_or_null("../World")
+			if world != null and world.has_method("reinitialize_world"):
+				world.reinitialize_world(seed_to_use)
+			_find_and_spawn_on_dry_land()
+			_save_current_game()
 			class_select_ui.open_selection()
 		else:
+			var world = get_node_or_null("../World")
+			if world != null and ("world_seed" in saved_data) and world.has_method("reinitialize_world"):
+				world.reinitialize_world(int(saved_data["world_seed"]))
+			is_terrain_ready = false
 			_apply_class_visuals()
 			_capture_mouse()
 
 	current_health = get_effective_max_health()
 	current_stamina = get_effective_max_stamina()
+
+
+## Trouve un point d'apparition aléatoire valide sur la terre ferme
+func _find_and_spawn_on_dry_land() -> void:
+	var world = get_node_or_null("../World")
+	if world == null or world.terrain_noise == null:
+		return
+
+	var chosen_x: float = 0.0
+	var chosen_z: float = 0.0
+	var found_valid: bool = false
+
+	# Tester jusqu'à 60 positions aléatoires
+	for attempt in range(60):
+		var test_x: int = randi_range(-250, 250)
+		var test_z: int = randi_range(-250, 250)
+		var h: int = Chunk.get_height_at(world.terrain_noise, test_x, test_z)
+		# Terre ferme : au-dessus de l'eau (> 34) et hors haute montagne (< 54)
+		if h > Chunk.SEA_LEVEL + 2 and h < 54:
+			chosen_x = float(test_x)
+			chosen_z = float(test_z)
+			found_valid = true
+			break
+
+	if not found_valid:
+		chosen_x = 0.0
+		chosen_z = 0.0
+
+	var surface_y: float = float(Chunk.get_height_at(world.terrain_noise, int(round(chosen_x)), int(round(chosen_z))))
+	global_position = Vector3(chosen_x, surface_y + 3.0, chosen_z)
+	velocity = Vector3.ZERO
+	is_terrain_ready = false
+
+
+## Redémarre instantanément une nouvelle aventure avec une nouvelle graine (Touche F6)
+func restart_with_new_seed(custom_seed: int = -1) -> void:
+	var seed_to_use: int = custom_seed if custom_seed >= 0 else int(randi() % 900000 + 100000)
+	var world = get_node_or_null("../World")
+	if world != null and world.has_method("reinitialize_world"):
+		world.reinitialize_world(seed_to_use)
+	_find_and_spawn_on_dry_land()
+	current_health = get_effective_max_health()
+	current_stamina = get_effective_max_stamina()
+	_save_current_game()
+	_capture_mouse()
 
 
 func _setup_inputs_if_missing() -> void:
@@ -198,7 +266,7 @@ func _build_player_components() -> void:
 	# 1. Capsule de collision
 	collision_layer = 1
 	collision_mask = 1
-	var col_shape := CollisionShape3D.new()
+	col_shape = CollisionShape3D.new()
 	var capsule := CapsuleShape3D.new()
 	capsule.radius = 0.35
 	capsule.height = 1.75
@@ -211,7 +279,7 @@ func _build_player_components() -> void:
 	character_model.name = "CharacterModel"
 	add_child(character_model)
 
-	# 3. Pivot et caméra orbitale
+	# 3. Pivot et caméra orbitale anti-collision
 	camera_pivot = Node3D.new()
 	camera_pivot.name = "CameraPivot"
 	camera_pivot.position = Vector3(0.0, 1.4, 0.0)
@@ -221,6 +289,10 @@ func _build_player_components() -> void:
 	spring_arm.name = "SpringArm3D"
 	spring_arm.spring_length = 5.0
 	spring_arm.margin = 0.25
+	var arm_sphere := SphereShape3D.new()
+	arm_sphere.radius = 0.22
+	spring_arm.shape = arm_sphere
+	spring_arm.collision_mask = 1
 	camera_pivot.add_child(spring_arm)
 
 	camera = Camera3D.new()
@@ -288,6 +360,37 @@ func _build_player_components() -> void:
 	main_menu_ui.setup(pause_menu_ui)
 	main_menu_ui.start_game_requested.connect(_on_start_game_from_menu)
 
+	# 13. Panneau de Débogage F3
+	debug_overlay = Panel.new()
+	debug_overlay.name = "DebugOverlay"
+	debug_overlay.size = Vector2(380.0, 210.0)
+	debug_overlay.position = Vector2(16.0, 50.0)
+	debug_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	debug_overlay.focus_mode = Control.FOCUS_NONE
+	var deb_sb := StyleBoxFlat.new()
+	deb_sb.bg_color = Color(0.05, 0.07, 0.10, 0.88)
+	deb_sb.border_width_left = 2
+	deb_sb.border_width_top = 2
+	deb_sb.border_width_right = 2
+	deb_sb.border_width_bottom = 2
+	deb_sb.border_color = Color(0.2, 0.85, 0.45)
+	deb_sb.corner_radius_top_left = 6
+	deb_sb.corner_radius_top_right = 6
+	deb_sb.corner_radius_bottom_left = 6
+	deb_sb.corner_radius_bottom_right = 6
+	debug_overlay.add_theme_stylebox_override("panel", deb_sb)
+	debug_overlay.visible = false
+	add_child(debug_overlay)
+
+	debug_label = Label.new()
+	debug_label.position = Vector2(12.0, 8.0)
+	debug_label.size = Vector2(356.0, 194.0)
+	debug_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	debug_label.focus_mode = Control.FOCUS_NONE
+	debug_label.add_theme_font_size_override("font_size", 12)
+	debug_label.add_theme_color_override("font_color", Color(0.9, 0.98, 0.92))
+	debug_overlay.add_child(debug_label)
+
 
 func set_player_class(c_type: int, save: bool = true) -> void:
 	player_class = c_type
@@ -317,12 +420,61 @@ func get_class_name_str() -> String:
 	return PlayerClassData.CLASS_NAMES[player_class]
 
 
+func _process(_delta: float) -> void:
+	if is_debug_open and debug_label != null:
+		var world = get_node_or_null("../World")
+		var w_seed: int = world.world_seed if world != null else 0
+		var px: int = int(round(global_position.x))
+		var pz: int = int(round(global_position.z))
+		var surf_h: float = float(Chunk.get_height_at(world.terrain_noise, px, pz)) if (world != null and world.terrain_noise != null) else 0.0
+		var cur_chunk := Vector2i(
+			int(floor(float(px) / float(Chunk.CHUNK_WIDTH))),
+			int(floor(float(pz) / float(Chunk.CHUNK_DEPTH)))
+		)
+		debug_label.text = "🔧 [F3] VOXELANDS DEBUG\n" \
+			+ "• Graine (Seed) : %d\n" % w_seed \
+			+ "• Position : (%.1f, %.1f, %.1f)\n" % [global_position.x, global_position.y, global_position.z] \
+			+ "• Hauteur surface : %.1f (Écart : %+.1fm)\n" % [surf_h, global_position.y - surf_h] \
+			+ "• Chunk actuel : (%d, %d)\n" % [cur_chunk.x, cur_chunk.y] \
+			+ "• Au sol : %s | Au mur : %s\n" % [str(is_on_floor()), str(is_on_wall())] \
+			+ "• Vélocité : (%.1f, %.1f, %.1f)\n" % [velocity.x, velocity.y, velocity.z] \
+			+ "• Mode Vol (Noclip) : %s [F5]\n" % ("ACTIF" if is_noclip else "INACTIF") \
+			+ "• Touches : F4=Haut +20m | F5=Noclip | F6=Nouvelle Seed"
+
+
 func _input(event: InputEvent) -> void:
+	# Raccourcis d'outils de debug (F3, F4, F5, F6)
+	if event is InputEventKey and event.pressed and not event.echo:
+		if event.keycode == KEY_F3:
+			is_debug_open = not is_debug_open
+			if debug_overlay != null:
+				debug_overlay.visible = is_debug_open
+			return
+		elif event.keycode == KEY_F4:
+			var world = get_node_or_null("../World")
+			var surf_h: float = 38.0
+			if world != null and world.terrain_noise != null:
+				surf_h = float(Chunk.get_height_at(world.terrain_noise, int(round(global_position.x)), int(round(global_position.z))))
+			global_position.y = surf_h + 20.0
+			velocity = Vector3.ZERO
+			return
+		elif event.keycode == KEY_F5:
+			is_noclip = not is_noclip
+			if col_shape != null:
+				col_shape.disabled = is_noclip
+			if is_noclip:
+				velocity = Vector3.ZERO
+				is_gliding = false
+			return
+		elif event.keycode == KEY_F6:
+			restart_with_new_seed()
+			return
+
 	if event is InputEventMouseMotion:
 		if not _is_any_menu_open() and (is_mouse_captured or Input.get_mouse_mode() == Input.MOUSE_MODE_CAPTURED):
 			is_mouse_captured = true
 			cam_yaw -= event.relative.x * mouse_sensitivity
-			cam_pitch = clampf(cam_pitch - (event.relative.y * mouse_sensitivity), -deg_to_rad(75.0), deg_to_rad(65.0))
+			cam_pitch = clampf(cam_pitch - (event.relative.y * mouse_sensitivity), -deg_to_rad(70.0), deg_to_rad(55.0))
 			_update_camera_rotation()
 
 
@@ -534,40 +686,46 @@ func _get_closest_enemy(enemies: Array, max_dist: float) -> Node3D:
 
 
 func _physics_process(delta: float) -> void:
+	# Mode Vol sans collision (Noclip F5)
+	if is_noclip:
+		var noclip_speed: float = 28.0 if Input.is_action_pressed("sprint") else 14.0
+		var move_dir := Vector3.ZERO
+		if camera != null:
+			if Input.is_action_pressed("move_forward"): move_dir -= camera.global_transform.basis.z
+			if Input.is_action_pressed("move_back"): move_dir += camera.global_transform.basis.z
+			if Input.is_action_pressed("move_left"): move_dir -= camera.global_transform.basis.x
+			if Input.is_action_pressed("move_right"): move_dir += camera.global_transform.basis.x
+		if Input.is_action_pressed("jump"): move_dir.y += 1.0
+		if Input.is_physical_key_pressed(KEY_CTRL) or Input.is_physical_key_pressed(KEY_C): move_dir.y -= 1.0
+		if move_dir != Vector3.ZERO:
+			global_position += move_dir.normalized() * noclip_speed * delta
+		velocity = Vector3.ZERO
+		return
+
 	# 1. Attente active de la présence physique du chunk sous le joueur
+	var px: int = int(floor(global_position.x))
+	var pz: int = int(floor(global_position.z))
+	var world = get_node_or_null("../World")
+	var surface_y: int = 38
+	if world != null and world.terrain_noise != null:
+		surface_y = Chunk.get_height_at(world.terrain_noise, px, pz)
+
 	if not is_terrain_ready:
 		velocity = Vector3.ZERO # Gravité désactivée tant que le terrain n'est pas matérialisé
-		var px: int = int(floor(global_position.x))
-		var pz: int = int(floor(global_position.z))
 		var cx: int = int(floor(float(px) / float(Chunk.CHUNK_WIDTH)))
 		var cz: int = int(floor(float(pz) / float(Chunk.CHUNK_DEPTH)))
 		var chunk: Chunk = _get_chunk_at_coords(Vector2i(cx, cz))
-		if chunk != null and chunk.collision_shape != null and chunk.collision_shape.shape != null:
-			var world = get_node_or_null("../World")
-			var surface_y: int = 38
-			if world != null and world.terrain_noise != null:
-				surface_y = Chunk.get_height_at(world.terrain_noise, px, pz)
-			global_position.y = float(surface_y) + 3.5
+		if chunk != null and chunk.collision_shape != null and chunk.collision_shape.is_inside_tree() and chunk.collision_shape.shape != null:
+			global_position.y = float(surface_y) + 3.0
 			velocity = Vector3.ZERO
 			is_terrain_ready = true
 		else:
 			return # Attente du thread sans chute ni gravité
 
-	# 2. Détection d'enfermement dans un bloc solide et dégagement vertical
-	var feet_pos := global_position + Vector3(0.0, 0.2, 0.0)
-	var head_pos := global_position + Vector3(0.0, 1.6, 0.0)
-	var feet_block: int = _get_block_type_at(feet_pos)
-	var head_block: int = _get_block_type_at(head_pos)
-	if _is_solid_block(feet_block) or _is_solid_block(head_block):
-		var test_y: float = global_position.y
-		for i in range(30):
-			test_y += 1.0
-			var f_b: int = _get_block_type_at(Vector3(global_position.x, test_y + 0.2, global_position.z))
-			var h_b: int = _get_block_type_at(Vector3(global_position.x, test_y + 1.6, global_position.z))
-			if not _is_solid_block(f_b) and not _is_solid_block(h_b):
-				global_position.y = test_y + 0.5
-				velocity = Vector3.ZERO
-				break
+	# 2. Sécurité automatique : si le joueur tombe sous le terrain ou le fond du monde
+	if global_position.y < float(surface_y) - 2.0 or global_position.y < 2.0:
+		global_position.y = float(surface_y) + 3.0
+		velocity = Vector3.ZERO
 
 	# Réduction des cooldowns
 	for i in range(4):

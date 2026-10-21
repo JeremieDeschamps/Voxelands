@@ -182,3 +182,25 @@
   - **Documentation complète** dans [`README.md`](file:///Z:/README.md) détaillant les touches, systèmes, architecture et la commande officielle d'exportation headless.
   - Validation headless réussie (Code de sortie 0).
 
+- [x] **Étape 9 : Correctifs d'Apparition, Graine Aléatoire, Outils Debug F3-F6 & Winding**
+  - **Correction du Spawn & Disparition sous le monde** :
+    - Calcul de la hauteur de surface directement et analytiquement via le bruit `Chunk.get_height_at(world.terrain_noise, x, z)` (sans itération de voxels ni raycast).
+    - Positionnement initial à `surface + 3 blocs`.
+    - Suspension active de la gravité et vélocité nulle tant que la forme de collision (`ConcavePolygonShape3D`) du chunk sous les pieds n'est pas insérée dans le SceneTree.
+    - Suppression intégrale de la recherche d'air vers le haut depuis le vide/fond du monde.
+    - Filet de sécurité automatique : téléportation immédiate à `surface + 3` si la position Y descend sous `surface - 2m` ou sous `y=2`.
+  - **Diversité des Parties & Graines Aléatoires** :
+    - Génération d'une seed aléatoire (`randi()`) à chaque nouvelle partie ou saisie d'une graine personnalisée dans le menu principal via un champ `LineEdit`.
+    - Recherche automatique d'un emplacement de départ sur la terre ferme (hors océan/plage et hors haute montagne, avec 60 itérations de repli).
+    - Sauvegarde automatique de la seed dans `user://save.json`.
+  - **Boîte à Outils de Débogage Complète** :
+    - `F3` : Panneau d'informations en surimpression (Graine, Position, Hauteur de relief, Écart, Coordonnées de Chunk, Sol/Mur, Vélocité, Mode Vol).
+    - `F4` : Téléportation de secours 20 blocs au-dessus de la surface.
+    - `F5` : Mode Vol / Noclip sans collision (déplacement libre caméra + Espace/Ctrl) avec désactivation de la capsule de collision.
+    - `F6` : Régénération et redémarrage instantanés d'une nouvelle aventure avec une nouvelle graine.
+  - **Rendu & Collisions Robuste** :
+    - Suppression de la face inférieure au fond du monde (`y = 0`) et culling inter-chunk vérifié.
+    - Activation de `backface_collision = true` sur `ConcavePolygonShape3D` pour éliminer tout risque de traversée.
+    - Caméra orbitale `SpringArm3D` blindée avec un volume sphérique (`SphereShape3D` rayon 0.22, marge 0.25) interdisant toute pénétration du terrain.
+  - Validation headless réussie sans erreur.
+

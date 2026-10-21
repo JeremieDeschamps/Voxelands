@@ -70,6 +70,43 @@ func _exit_tree() -> void:
 	active_tasks.clear()
 
 
+## Réinitialise entièrement le monde avec une nouvelle graine (seed)
+func reinitialize_world(new_seed: int) -> void:
+	# 1. Attente et nettoyage des tâches de threads en cours
+	for task_id: int in active_tasks.keys():
+		WorkerThreadPool.wait_for_task_completion(task_id)
+	active_tasks.clear()
+	pending_coords.clear()
+
+	thread_mutex.lock()
+	completed_queue.clear()
+	thread_mutex.unlock()
+
+	# 2. Suppression de tous les chunks existants
+	for chunk in active_chunks.values():
+		if is_instance_valid(chunk):
+			chunk.queue_free()
+	active_chunks.clear()
+
+	# 3. Réinitialisation des bruits et générateurs
+	world_seed = new_seed
+	_init_noises()
+
+	if village_generator != null:
+		village_generator.setup(world_seed, terrain_noise, temperature_noise, humidity_noise)
+	if dungeon_generator != null:
+		dungeon_generator.setup(world_seed, terrain_noise)
+
+	if target_node != null:
+		var target_pos: Vector3 = target_node.global_position
+		last_player_chunk = Vector2i(
+			int(floor(target_pos.x / float(Chunk.CHUNK_WIDTH))),
+			int(floor(target_pos.z / float(Chunk.CHUNK_DEPTH)))
+		)
+
+	_update_chunks_around_target()
+
+
 func _init_noises() -> void:
 	# 1. Relief et élévation
 	terrain_noise.seed = world_seed

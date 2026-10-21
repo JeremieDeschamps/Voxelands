@@ -3,14 +3,15 @@ extends CanvasLayer
 
 ## Écran titre et Menu Principal de Voxelands avec Nouvelle Partie, Continuer, Réglages et Quitter.
 
-signal start_game_requested(is_new_game: bool)
+signal start_game_requested(is_new_game: bool, custom_seed: int)
 
 var is_open: bool = true
 var pause_menu_ref: Node = null
 
 var panel: Panel = null
-var new_game_btn: Button = null
 var continue_btn: Button = null
+var new_game_btn: Button = null
+var seed_input: LineEdit = null
 var settings_btn: Button = null
 var quit_btn: Button = null
 
@@ -79,6 +80,21 @@ func _build_ui() -> void:
 	new_game_btn.pressed.connect(_on_new_game_pressed)
 	btn_vbox.add_child(new_game_btn)
 
+	# Champ optionnel pour spécifier une graine
+	var seed_box := VBoxContainer.new()
+	seed_box.add_theme_constant_override("separation", 4)
+	var seed_lbl := Label.new()
+	seed_lbl.text = "Graine personnalisée (Optionnelle) :"
+	seed_lbl.add_theme_font_size_override("font_size", 12)
+	seed_lbl.add_theme_color_override("font_color", Color(0.75, 0.82, 0.90))
+	seed_box.add_child(seed_lbl)
+
+	seed_input = LineEdit.new()
+	seed_input.placeholder_text = "Laisser vide pour aléatoire (ex: 42)"
+	seed_input.custom_minimum_size = Vector2(300.0, 32.0)
+	seed_box.add_child(seed_input)
+	btn_vbox.add_child(seed_box)
+
 	settings_btn = _create_menu_btn("⚙️ Paramètres & Options")
 	settings_btn.pressed.connect(_on_settings_pressed)
 	btn_vbox.add_child(settings_btn)
@@ -92,7 +108,7 @@ func _build_ui() -> void:
 	controls_hint.position = Vector2(0.0, 640.0)
 	controls_hint.size = Vector2(screen_sz.x, 30.0)
 	controls_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	controls_hint.text = "Contrôles : ZQSD/WASD • Espace : Saut/Planeur • Shift : Sprint • I : Inventaire • M : Carte • F : Interagir • E/R : Sorts • Echap : Pause"
+	controls_hint.text = "Contrôles : ZQSD/WASD • Espace : Saut/Planeur • Shift : Sprint • I : Inventaire • M : Carte • F : Interagir • F3 : Debug"
 	controls_hint.add_theme_color_override("font_color", Color(0.65, 0.70, 0.75))
 	panel.add_child(controls_hint)
 
@@ -114,12 +130,19 @@ func _check_save_file() -> void:
 
 func _on_continue_pressed() -> void:
 	close_main_menu()
-	start_game_requested.emit(false)
+	start_game_requested.emit(false, -1)
 
 
 func _on_new_game_pressed() -> void:
+	var user_seed: int = -1
+	if seed_input != null and seed_input.text.strip_edges() != "":
+		var txt: String = seed_input.text.strip_edges()
+		if txt.is_valid_int():
+			user_seed = int(txt)
+		else:
+			user_seed = abs(txt.hash()) % 1000000 + 1
 	close_main_menu()
-	start_game_requested.emit(true)
+	start_game_requested.emit(true, user_seed)
 
 
 func _on_settings_pressed() -> void:

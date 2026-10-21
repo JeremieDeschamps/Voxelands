@@ -315,6 +315,11 @@ static func build_mesh_data(data: PackedByteArray, coords: Vector2i, max_y: int,
 
 				for face_idx in range(6):
 					var dir: Vector3i = FACE_DIRECTIONS[face_idx]
+
+					# Aucune face générée au fond du monde (y = 0 face inférieure)
+					if y == 0 and dir == Vector3i.DOWN:
+						continue
+
 					var neighbor_block: int = get_block_from_data(data, coords, x + dir.x, y + dir.y, z + dir.z, t_noise, temp_noise, hum_noise)
 
 					if BlockTypes.is_opaque(neighbor_block):
@@ -432,6 +437,7 @@ func apply_mesh_and_collision(mesh_arrays: Array, collision_faces: PackedVector3
 			add_child(collision_shape)
 
 		var shape := ConcavePolygonShape3D.new()
+		shape.backface_collision = true
 		shape.set_faces(collision_faces)
 		collision_shape.shape = shape
 	elif collision_shape != null:
